@@ -9,7 +9,7 @@ GITHUB_UPLOAD_BRANCH = "main"
 ALLOWED_ORIGINS = "chrome-extension://*,moz-extension://*"
 
 # Set this before deploying:
-#   wrangler secret put GITHUB_TOKEN
+#   wrangler secret put GH_TOKEN
 #
 # Optional production route:
 # routes = [{ pattern = "report.open-adblock.com/*", custom_domain = true }]

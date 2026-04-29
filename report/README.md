@@ -22,11 +22,11 @@ If a report includes a screenshot, the Worker uploads it to the configured GitHu
 ```sh
 npm install
 npm run check
-wrangler secret put GITHUB_TOKEN
+wrangler secret put GH_TOKEN
 npm run deploy
 ```
 
-`GITHUB_TOKEN` should be a fine-grained GitHub token with Issues read/write access and Contents read/write access to the configured repository.
+`GH_TOKEN` should be a fine-grained GitHub token with Issues read/write access and Contents read/write access to the configured repository.
 
 Optional environment variables:
 

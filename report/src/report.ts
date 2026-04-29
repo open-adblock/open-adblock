@@ -1,4 +1,5 @@
 export type Env = {
+  GH_TOKEN?: string;
   GITHUB_TOKEN?: string;
   GITHUB_REPO?: string;
   GITHUB_LABELS?: string;
@@ -127,9 +128,9 @@ export async function createGitHubIssue(
   report: NormalizedReport,
   fetcher: Fetcher = fetch
 ): Promise<GitHubIssue> {
-  const token = env.GITHUB_TOKEN?.trim();
+  const token = getGitHubToken(env);
   if (!token) {
-    throw new ReportError(500, "missing_github_token", "GITHUB_TOKEN is not configured");
+    throw new ReportError(500, "missing_github_token", "GH_TOKEN is not configured");
   }
 
   const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);
@@ -376,6 +377,10 @@ function buildGitHubHeaders(token: string): HeadersInit {
   };
 }
 
+function getGitHubToken(env: Env): string {
+  return (env.GH_TOKEN || env.GITHUB_TOKEN || "").trim();
+}
+
 async function storeReportScreenshot(env: Env, report: NormalizedReport, fetcher: Fetcher): Promise<string> {
   if (!report.screenshot) return "";
   return uploadScreenshotToGitHub(env, report, fetcher);
@@ -384,9 +389,9 @@ async function storeReportScreenshot(env: Env, report: NormalizedReport, fetcher
 async function uploadScreenshotToGitHub(env: Env, report: NormalizedReport, fetcher: Fetcher = fetch): Promise<string> {
   if (!report.screenshot) return "";
 
-  const token = env.GITHUB_TOKEN?.trim();
+  const token = getGitHubToken(env);
   if (!token) {
-    throw new ReportError(500, "missing_github_token", "GITHUB_TOKEN is not configured");
+    throw new ReportError(500, "missing_github_token", "GH_TOKEN is not configured");
   }
 
   const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);

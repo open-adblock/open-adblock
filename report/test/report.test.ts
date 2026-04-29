@@ -89,7 +89,7 @@ describe("createGitHubIssue", () => {
 
     const issue = await createGitHubIssue(
       {
-        GITHUB_TOKEN: "token",
+        GH_TOKEN: "token",
         GITHUB_REPO: "open-adblock/open-adblock",
         GITHUB_LABELS: "extension-report,needs-triage"
       },
@@ -137,7 +137,7 @@ describe("createGitHubIssue", () => {
 
     const issue = await createGitHubIssue(
       {
-        GITHUB_TOKEN: "token",
+        GH_TOKEN: "token",
         GITHUB_REPO: "open-adblock/open-adblock"
       },
       report,
@@ -186,7 +186,7 @@ describe("createGitHubIssue", () => {
       return Response.json({ id: 100 });
     };
 
-    const issue = await createGitHubIssue({ GITHUB_TOKEN: "token" }, report, fetcher as typeof fetch);
+    const issue = await createGitHubIssue({ GH_TOKEN: "token" }, report, fetcher as typeof fetch);
 
     expect(issue).toMatchObject({ number: 17, created: false, commented: true, reopened: false });
     expect(calls).toHaveLength(3);
@@ -224,7 +224,7 @@ describe("createGitHubIssue", () => {
       return Response.json({});
     };
 
-    const issue = await createGitHubIssue({ GITHUB_TOKEN: "token" }, report, fetcher as typeof fetch);
+    const issue = await createGitHubIssue({ GH_TOKEN: "token" }, report, fetcher as typeof fetch);
 
     expect(issue).toMatchObject({ number: 28, created: false, commented: true, reopened: true });
     expect(calls).toHaveLength(4);
