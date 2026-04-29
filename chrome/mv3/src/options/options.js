@@ -181,6 +181,9 @@ function renderReports(reports) {
       const issueLink = report.issueUrl
         ? `<a href="${escapeHtml(report.issueUrl)}" target="_blank" rel="noopener noreferrer">#${escapeHtml(report.issueNumber || "issue")}</a>`
         : "";
+      const screenshotLink = report.screenshotUrl
+        ? `<a href="${escapeHtml(report.screenshotUrl)}" target="_blank" rel="noopener noreferrer">screenshot</a>`
+        : "";
       return `
       <article class="list-item">
         <div>
@@ -189,6 +192,7 @@ function renderReports(reports) {
           <div class="report-meta">
             <span class="status-pill ${status.className}">${status.label}</span>
             ${issueLink}
+            ${screenshotLink}
           </div>
         </div>
         <button data-remove-report="${escapeHtml(report.id)}">Remove</button>

@@ -416,9 +416,11 @@ async function reportBreakage(message) {
   const category = normalizeReportCategory(message.category);
   const details = String(message.details || message.reason || "").slice(0, 2000);
   const includeUrl = message.includeUrl !== false;
+  const includeScreenshot = message.includeScreenshot !== false;
   const endpointUrl = normalizeReportEndpointUrl(
     storage.settings?.reportEndpointUrl || storage.filters?.reportEndpointUrl
   );
+  const screenshot = includeScreenshot ? await captureReportScreenshot(tab?.windowId) : null;
   const report = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     url: includeUrl ? url : "",
@@ -427,6 +429,9 @@ async function reportBreakage(message) {
     details,
     reason: details || getReportCategoryLabel(category),
     includeUrl,
+    includeScreenshot,
+    screenshotIncluded: Boolean(screenshot?.dataUrl),
+    screenshotUrl: null,
     status: "pending",
     issueNumber: null,
     issueUrl: null,
@@ -449,10 +454,16 @@ async function reportBreakage(message) {
       version: manifest.version
     },
     userAgent: navigator.userAgent,
+    screenshot: screenshot?.dataUrl ? { dataUrl: screenshot.dataUrl } : undefined,
     diagnostics: {
       paused: Boolean(storage.siteState?.[hostname]?.paused),
       pageBlocked: tab?.id ? getPageBlockedCount(storage.pageStats || {}, tab.id) : 0,
       pageStats,
+      screenshot: {
+        requested: includeScreenshot,
+        captured: Boolean(screenshot?.dataUrl),
+        error: screenshot?.error || null
+      },
       filters: {
         buildId: storage.filters?.buildId,
         remoteVersion: storage.filters?.remoteVersion,
@@ -466,6 +477,7 @@ async function reportBreakage(message) {
     report.status = "submitted";
     report.issueNumber = result.issue?.number || null;
     report.issueUrl = result.issue?.url || null;
+    report.screenshotUrl = result.issue?.screenshotUrl || null;
   } catch (error) {
     report.status = "failed";
     report.error = error.message || String(error);
@@ -551,6 +563,24 @@ async function submitReport(endpointUrl, payload) {
     throw error;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function captureReportScreenshot(windowId) {
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+      format: "jpeg",
+      quality: 60
+    });
+    if (!dataUrl) {
+      return { dataUrl: "", error: "Screenshot capture returned no data" };
+    }
+    return { dataUrl, error: null };
+  } catch (error) {
+    return {
+      dataUrl: "",
+      error: error.message || String(error)
+    };
   }
 }
 

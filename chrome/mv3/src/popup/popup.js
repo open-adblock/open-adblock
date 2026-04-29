@@ -23,6 +23,7 @@ const reportHost = document.getElementById("reportHost");
 const reportCategory = document.getElementById("reportCategory");
 const reportDetails = document.getElementById("reportDetails");
 const reportIncludeUrl = document.getElementById("reportIncludeUrl");
+const reportIncludeScreenshot = document.getElementById("reportIncludeScreenshot");
 const reportCloseButton = document.getElementById("reportCloseButton");
 const reportCancelButton = document.getElementById("reportCancelButton");
 const reportSubmitButton = document.getElementById("reportSubmitButton");
@@ -85,7 +86,8 @@ reportForm.addEventListener("submit", async (event) => {
       hostname: state.hostname,
       category: reportCategory.value,
       details: reportDetails.value,
-      includeUrl: reportIncludeUrl.checked
+      includeUrl: reportIncludeUrl.checked,
+      includeScreenshot: reportIncludeScreenshot.checked
     });
     state.reportCount += 1;
     render(state);
@@ -157,6 +159,7 @@ function openReportDialog() {
   reportCategory.value = "breakage";
   reportDetails.value = "";
   reportIncludeUrl.checked = true;
+  reportIncludeScreenshot.checked = true;
   reportSubmitButton.disabled = false;
   reportCancelButton.disabled = false;
   reportSubmitButton.textContent = "Send report";

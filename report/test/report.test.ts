@@ -52,6 +52,22 @@ describe("normalizeReportPayload", () => {
   it("rejects reports without a hostname", () => {
     expect(() => normalizeReportPayload({ page: { url: "not a url" } })).toThrow(ReportError);
   });
+
+  it("normalizes screenshot data URLs", () => {
+    const report = normalizeReportPayload({
+      category: "breakage",
+      page: { url: "https://example.com/", hostname: "example.com" },
+      screenshot: {
+        dataUrl: "data:image/png;base64,aGVsbG8="
+      }
+    });
+
+    expect(report.screenshot).toMatchObject({
+      mimeType: "image/png",
+      extension: "png",
+      sizeBytes: 5
+    });
+  });
 });
 
 describe("createGitHubIssue", () => {
@@ -87,7 +103,53 @@ describe("createGitHubIssue", () => {
     expect(calls[1].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues");
     expect(await calls[1].json()).toMatchObject({
       title: "Breakage: `shop.example`",
-      labels: ["extension-report", "needs-triage"]
+      labels: ["filter:breakage", "extension-report", "needs-triage"]
+    });
+  });
+
+  it("uploads a screenshot and embeds it in a new issue", async () => {
+    const report = normalizeReportPayload({
+      id: "screen-1",
+      category: "breakage",
+      details: "Hero is covered",
+      page: { url: "https://screen.example/", hostname: "screen.example" },
+      screenshot: {
+        dataUrl: "data:image/jpeg;base64,aGVsbG8="
+      }
+    }, new Date("2026-04-29T15:10:00.000Z"));
+    const calls: Request[] = [];
+    const puts: Array<{ key: string; value: Uint8Array; options: R2PutOptions }> = [];
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(new Request(input, init));
+      if (calls.length === 1) {
+        return Response.json({ items: [] });
+      }
+      return Response.json({ number: 51, html_url: "https://github.com/open-adblock/open-adblock/issues/51" });
+    };
+    const bucket = {
+      put: async (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null | Blob, options?: R2PutOptions) => {
+        puts.push({ key, value: value as Uint8Array, options: options || {} });
+        return null;
+      }
+    } as unknown as R2Bucket;
+
+    const issue = await createGitHubIssue(
+      {
+        GITHUB_TOKEN: "token",
+        SCREENSHOT_BUCKET: bucket,
+        SCREENSHOT_PUBLIC_BASE_URL: "https://screenshots.example"
+      },
+      report,
+      fetcher as typeof fetch
+    );
+
+    expect(issue.screenshotUrl).toBe("https://screenshots.example/screenshots/2026-04-29/screen.example/screen-1.jpg");
+    expect(puts[0]).toMatchObject({
+      key: "screenshots/2026-04-29/screen.example/screen-1.jpg"
+    });
+    expect(puts[0].options.httpMetadata).toEqual({ contentType: "image/jpeg" });
+    expect(await calls[1].json()).toMatchObject({
+      body: expect.stringContaining("![Screenshot](https://screenshots.example/screenshots/2026-04-29/screen.example/screen-1.jpg)")
     });
   });
 
@@ -118,10 +180,14 @@ describe("createGitHubIssue", () => {
     const issue = await createGitHubIssue({ GITHUB_TOKEN: "token" }, report, fetcher as typeof fetch);
 
     expect(issue).toMatchObject({ number: 17, created: false, commented: true, reopened: false });
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
     expect(calls[1].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/17/comments");
     expect(await calls[1].json()).toMatchObject({
       body: expect.stringContaining("## Additional report")
+    });
+    expect(calls[2].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/17/labels");
+    expect(await calls[2].json()).toEqual({
+      labels: ["filter:breakage", "extension-report", "needs-triage"]
     });
   });
 
@@ -152,10 +218,11 @@ describe("createGitHubIssue", () => {
     const issue = await createGitHubIssue({ GITHUB_TOKEN: "token" }, report, fetcher as typeof fetch);
 
     expect(issue).toMatchObject({ number: 28, created: false, commented: true, reopened: true });
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     expect(calls[1].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/28/comments");
-    expect(calls[2].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/28");
-    expect(await calls[2].json()).toEqual({ state: "open" });
+    expect(calls[2].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/28/labels");
+    expect(calls[3].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/28");
+    expect(await calls[3].json()).toEqual({ state: "open" });
   });
 });
 

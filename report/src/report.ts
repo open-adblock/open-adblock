@@ -3,6 +3,8 @@ export type Env = {
   GITHUB_REPO?: string;
   GITHUB_LABELS?: string;
   ALLOWED_ORIGINS?: string;
+  SCREENSHOT_BUCKET?: R2Bucket;
+  SCREENSHOT_PUBLIC_BASE_URL?: string;
 };
 
 export type NormalizedReport = {
@@ -15,6 +17,8 @@ export type NormalizedReport = {
   userAgent: string;
   reportedAt: string;
   diagnostics: Record<string, unknown>;
+  screenshot: ReportScreenshot | null;
+  screenshotUrl?: string;
 };
 
 export type GitHubIssue = {
@@ -23,11 +27,18 @@ export type GitHubIssue = {
   created: boolean;
   commented: boolean;
   reopened: boolean;
+  screenshotUrl?: string;
 };
 
 export type Fetcher = typeof fetch;
 
 type ReportCategory = "breakage" | "missed_ad" | "false_positive" | "other";
+type ReportScreenshot = {
+  data: Uint8Array;
+  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  extension: "jpg" | "png" | "webp";
+  sizeBytes: number;
+};
 type ExistingGitHubIssue = {
   number: number;
   title: string;
@@ -36,11 +47,13 @@ type ExistingGitHubIssue = {
 };
 
 const DEFAULT_REPO = "open-adblock/open-adblock";
-const DEFAULT_LABELS = ["extension-report", "needs-triage"];
-const MAX_BODY_BYTES = 16 * 1024;
+const REQUIRED_LABELS = ["filter:breakage"];
+const DEFAULT_LABELS = ["filter:breakage", "extension-report", "needs-triage"];
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_DETAILS_LENGTH = 2000;
 const MAX_URL_LENGTH = 2000;
 const MAX_DIAGNOSTICS_BYTES = 6000;
+const MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024;
 
 const CATEGORY_LABELS: Record<ReportCategory, string> = {
   breakage: "Page broken",
@@ -104,7 +117,8 @@ export function normalizeReportPayload(payload: unknown, now = new Date()): Norm
     extensionVersion: sanitizeText(asString(extension.version), 40) || "unknown",
     userAgent: sanitizeText(asString(payload.userAgent), 200),
     reportedAt: now.toISOString(),
-    diagnostics: normalizeDiagnostics(payload.diagnostics)
+    diagnostics: normalizeDiagnostics(payload.diagnostics),
+    screenshot: normalizeScreenshot(payload.screenshot)
   };
 }
 
@@ -121,10 +135,16 @@ export async function createGitHubIssue(
   const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);
   const tokenHeaders = buildGitHubHeaders(token);
   const title = buildIssueTitle(report);
+  const screenshotUrl = await storeReportScreenshot(env, report);
+  const reportWithScreenshot = {
+    ...report,
+    screenshotUrl
+  };
   const existingIssue = await findExistingIssue(repo, tokenHeaders, report, fetcher);
 
   if (existingIssue) {
-    await addGitHubIssueComment(repo, tokenHeaders, existingIssue.number, report, fetcher);
+    await addGitHubIssueComment(repo, tokenHeaders, existingIssue.number, reportWithScreenshot, fetcher);
+    await addGitHubIssueLabels(repo, tokenHeaders, existingIssue.number, parseLabels(env.GITHUB_LABELS), fetcher);
     let reopened = false;
 
     if (existingIssue.state === "closed") {
@@ -137,7 +157,8 @@ export async function createGitHubIssue(
       url: existingIssue.url,
       created: false,
       commented: true,
-      reopened
+      reopened,
+      screenshotUrl
     };
   }
 
@@ -146,7 +167,7 @@ export async function createGitHubIssue(
     headers: tokenHeaders,
     body: JSON.stringify({
       title,
-      body: buildIssueBody(report),
+      body: buildIssueBody(reportWithScreenshot),
       labels: parseLabels(env.GITHUB_LABELS)
     })
   });
@@ -168,7 +189,7 @@ export async function createGitHubIssue(
     throw new ReportError(502, "github_issue_invalid", "GitHub returned an invalid issue response");
   }
 
-  return { number, url, created: true, commented: false, reopened: false };
+  return { number, url, created: true, commented: false, reopened: false, screenshotUrl };
 }
 
 export function getAllowedCorsOrigin(origin: string, allowedOrigins = ""): string {
@@ -202,6 +223,9 @@ export function buildIssueBody(report: NormalizedReport): string {
     `- URL: ${report.url || "Not included"}`,
     `- Extension version: ${report.extensionVersion}`,
     `- Reported at: ${report.reportedAt}`,
+    "",
+    "## Screenshot",
+    report.screenshotUrl ? `![Screenshot](${report.screenshotUrl})` : screenshotFallbackText(report),
     "",
     "## Details",
     report.details || "No additional details provided.",
@@ -293,6 +317,31 @@ async function addGitHubIssueComment(
   }
 }
 
+async function addGitHubIssueLabels(
+  repo: string,
+  headers: HeadersInit,
+  issueNumber: number,
+  labels: string[],
+  fetcher: Fetcher
+): Promise<void> {
+  const response = await fetcher(`https://api.github.com/repos/${repo}/issues/${issueNumber}/labels`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      labels
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ReportError(
+      502,
+      "github_issue_label_failed",
+      `GitHub issue label update failed with ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+}
+
 async function reopenGitHubIssue(
   repo: string,
   headers: HeadersInit,
@@ -327,8 +376,44 @@ function buildGitHubHeaders(token: string): HeadersInit {
   };
 }
 
+async function storeReportScreenshot(env: Env, report: NormalizedReport): Promise<string> {
+  if (!report.screenshot) return "";
+
+  const bucket = env.SCREENSHOT_BUCKET;
+  const publicBaseUrl = env.SCREENSHOT_PUBLIC_BASE_URL?.trim().replace(/\/+$/g, "");
+  if (!bucket || !publicBaseUrl) {
+    throw new ReportError(
+      500,
+      "missing_screenshot_storage",
+      "Screenshot storage requires SCREENSHOT_BUCKET and SCREENSHOT_PUBLIC_BASE_URL"
+    );
+  }
+
+  const key = [
+    "screenshots",
+    report.reportedAt.slice(0, 10),
+    getReportDomain(report),
+    `${sanitizeKeyPart(report.id)}.${report.screenshot.extension}`
+  ].join("/");
+  await bucket.put(key, report.screenshot.data, {
+    httpMetadata: {
+      contentType: report.screenshot.mimeType
+    },
+    customMetadata: {
+      reportId: report.id,
+      hostname: report.hostname
+    }
+  });
+
+  return `${publicBaseUrl}/${key}`;
+}
+
 function getReportDomain(report: NormalizedReport): string {
   return report.hostname.replace(/^www\./, "");
+}
+
+function sanitizeKeyPart(value: string): string {
+  return value.replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 120) || crypto.randomUUID();
 }
 
 function normalizeCategory(value: string): ReportCategory {
@@ -345,11 +430,12 @@ function normalizeRepo(value: string): string {
 }
 
 function parseLabels(value = ""): string[] {
-  const labels = value
+  const configuredLabels = value
     .split(",")
     .map((label) => sanitizeText(label, 50))
     .filter(Boolean);
-  return (labels.length > 0 ? labels : DEFAULT_LABELS).slice(0, 10);
+  const labels = configuredLabels.length > 0 ? configuredLabels : DEFAULT_LABELS;
+  return [...new Set([...REQUIRED_LABELS, ...labels])].slice(0, 10);
 }
 
 function normalizeDiagnostics(value: unknown): Record<string, unknown> {
@@ -365,6 +451,55 @@ function normalizeDiagnostics(value: unknown): Record<string, unknown> {
   }
 
   return { truncated: true };
+}
+
+function normalizeScreenshot(value: unknown): ReportScreenshot | null {
+  if (!isRecord(value)) return null;
+
+  const dataUrl = asString(value.dataUrl);
+  if (!dataUrl) return null;
+
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match) {
+    throw new ReportError(400, "invalid_screenshot", "Screenshot must be a JPEG, PNG, or WebP data URL");
+  }
+
+  const [, mimeType, base64] = match;
+  const sizeBytes = estimateBase64Bytes(base64);
+  if (sizeBytes > MAX_SCREENSHOT_BYTES) {
+    throw new ReportError(413, "screenshot_too_large", "Screenshot payload is too large");
+  }
+
+  return {
+    data: decodeBase64(base64),
+    mimeType: mimeType as ReportScreenshot["mimeType"],
+    extension: screenshotExtension(mimeType),
+    sizeBytes
+  };
+}
+
+function screenshotFallbackText(report: NormalizedReport): string {
+  return report.screenshot ? "Screenshot was captured but not uploaded." : "Not included.";
+}
+
+function screenshotExtension(mimeType: string): ReportScreenshot["extension"] {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
+function estimateBase64Bytes(value: string): number {
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  return Math.floor((value.length * 3) / 4) - padding;
+}
+
+function decodeBase64(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 function normalizeHostname(value: string): string {
