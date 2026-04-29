@@ -297,7 +297,7 @@ function getPreviewOptionsState() {
       theme: "system",
       remoteUpdates: true,
       remoteManifestUrl: "https://cdn.jsdelivr.net/gh/open-adblock/open-adblock@main/filters/manifest.json",
-      reportEndpointUrl: "https://reports.openadblock.org/api/reports"
+      reportEndpointUrl: "https://report.open-adblock.com/api/reports"
     },
     siteState: {},
     stats: {
@@ -329,7 +329,7 @@ function getPreviewOptionsState() {
       remoteVersion: null,
       remoteUpdatedAt: null,
       remoteLastError: null,
-      reportEndpointUrl: "https://reports.openadblock.org/api/reports",
+      reportEndpointUrl: "https://report.open-adblock.com/api/reports",
       sourceSummary: []
     }
   };

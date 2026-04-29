@@ -12,7 +12,7 @@ import {
 import cosmeticPackagedIndex from "../../filters/generated/cosmetic-index.js";
 
 const DEFAULT_REMOTE_MANIFEST_URL = "https://cdn.jsdelivr.net/gh/open-adblock/open-adblock@main/filters/manifest.json";
-const DEFAULT_REPORT_ENDPOINT_URL = "https://reports.openadblock.org/api/reports";
+const DEFAULT_REPORT_ENDPOINT_URL = "https://report.open-adblock.com/api/reports";
 const REMOTE_ALARM_NAME = "openadblock.remote-filter-update";
 const USER_SITE_RULE_START = 100000;
 const USER_SITE_RULE_MAX = 5000;

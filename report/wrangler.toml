@@ -12,4 +12,4 @@ ALLOWED_ORIGINS = "chrome-extension://*,moz-extension://*"
 #   wrangler secret put GITHUB_TOKEN
 #
 # Optional production route:
-# routes = [{ pattern = "reports.openadblock.org/*", custom_domain = true }]
+# routes = [{ pattern = "report.open-adblock.com/*", custom_domain = true }]

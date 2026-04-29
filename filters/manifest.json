@@ -3,7 +3,7 @@
   "version": "browser-packaged-2026-04-28",
   "publishedAt": "2026-04-28T00:00:00.000Z",
   "minimumExtensionVersion": "0.1.0",
-  "reportEndpointUrl": "https://reports.openadblock.org/api/reports",
+  "reportEndpointUrl": "https://report.open-adblock.com/api/reports",
   "files": [
     {
       "type": "allowlist-network",
