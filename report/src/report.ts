@@ -2,9 +2,8 @@ export type Env = {
   GITHUB_TOKEN?: string;
   GITHUB_REPO?: string;
   GITHUB_LABELS?: string;
+  GITHUB_UPLOAD_BRANCH?: string;
   ALLOWED_ORIGINS?: string;
-  SCREENSHOT_BUCKET?: R2Bucket;
-  SCREENSHOT_PUBLIC_BASE_URL?: string;
 };
 
 export type NormalizedReport = {
@@ -34,6 +33,7 @@ export type Fetcher = typeof fetch;
 
 type ReportCategory = "breakage" | "missed_ad" | "false_positive" | "other";
 type ReportScreenshot = {
+  base64: string;
   data: Uint8Array;
   mimeType: "image/jpeg" | "image/png" | "image/webp";
   extension: "jpg" | "png" | "webp";
@@ -135,7 +135,7 @@ export async function createGitHubIssue(
   const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);
   const tokenHeaders = buildGitHubHeaders(token);
   const title = buildIssueTitle(report);
-  const screenshotUrl = await storeReportScreenshot(env, report);
+  const screenshotUrl = await storeReportScreenshot(env, report, fetcher);
   const reportWithScreenshot = {
     ...report,
     screenshotUrl
@@ -376,36 +376,53 @@ function buildGitHubHeaders(token: string): HeadersInit {
   };
 }
 
-async function storeReportScreenshot(env: Env, report: NormalizedReport): Promise<string> {
+async function storeReportScreenshot(env: Env, report: NormalizedReport, fetcher: Fetcher): Promise<string> {
+  if (!report.screenshot) return "";
+  return uploadScreenshotToGitHub(env, report, fetcher);
+}
+
+async function uploadScreenshotToGitHub(env: Env, report: NormalizedReport, fetcher: Fetcher = fetch): Promise<string> {
   if (!report.screenshot) return "";
 
-  const bucket = env.SCREENSHOT_BUCKET;
-  const publicBaseUrl = env.SCREENSHOT_PUBLIC_BASE_URL?.trim().replace(/\/+$/g, "");
-  if (!bucket || !publicBaseUrl) {
-    throw new ReportError(
-      500,
-      "missing_screenshot_storage",
-      "Screenshot storage requires SCREENSHOT_BUCKET and SCREENSHOT_PUBLIC_BASE_URL"
-    );
+  const token = env.GITHUB_TOKEN?.trim();
+  if (!token) {
+    throw new ReportError(500, "missing_github_token", "GITHUB_TOKEN is not configured");
   }
 
-  const key = [
-    "screenshots",
+  const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);
+  const branch = sanitizeBranchName(env.GITHUB_UPLOAD_BRANCH || "main");
+  const path = [
+    ".github",
+    "report-screenshots",
     report.reportedAt.slice(0, 10),
     getReportDomain(report),
     `${sanitizeKeyPart(report.id)}.${report.screenshot.extension}`
   ].join("/");
-  await bucket.put(key, report.screenshot.data, {
-    httpMetadata: {
-      contentType: report.screenshot.mimeType
-    },
-    customMetadata: {
-      reportId: report.id,
-      hostname: report.hostname
-    }
+  const response = await fetcher(`https://api.github.com/repos/${repo}/contents/${encodeURIComponentPath(path)}`, {
+    method: "PUT",
+    headers: buildGitHubHeaders(token),
+    body: JSON.stringify({
+      message: `Add report screenshot for ${getReportDomain(report)}`,
+      content: report.screenshot.base64,
+      branch,
+      committer: {
+        name: "OpenAdBlock Report Worker",
+        email: "reports@openadblock.org"
+      }
+    })
   });
 
-  return `${publicBaseUrl}/${key}`;
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ReportError(
+      502,
+      "github_screenshot_upload_failed",
+      `GitHub screenshot upload failed with ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+
+  const result = (await response.json()) as { content?: { download_url?: unknown } };
+  return asString(result.content?.download_url) || buildRawGitHubUrl(repo, branch, path);
 }
 
 function getReportDomain(report: NormalizedReport): string {
@@ -414,6 +431,18 @@ function getReportDomain(report: NormalizedReport): string {
 
 function sanitizeKeyPart(value: string): string {
   return value.replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 120) || crypto.randomUUID();
+}
+
+function sanitizeBranchName(value: string): string {
+  return value.replace(/[^A-Za-z0-9_./-]/g, "").replace(/^\/+|\/+$/g, "") || "main";
+}
+
+function encodeURIComponentPath(path: string): string {
+  return path.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function buildRawGitHubUrl(repo: string, branch: string, path: string): string {
+  return `https://raw.githubusercontent.com/${repo}/${encodeURIComponentPath(branch)}/${encodeURIComponentPath(path)}`;
 }
 
 function normalizeCategory(value: string): ReportCategory {
@@ -471,6 +500,7 @@ function normalizeScreenshot(value: unknown): ReportScreenshot | null {
   }
 
   return {
+    base64,
     data: decodeBase64(base64),
     mimeType: mimeType as ReportScreenshot["mimeType"],
     extension: screenshotExtension(mimeType),

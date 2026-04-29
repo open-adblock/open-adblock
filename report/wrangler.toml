@@ -5,13 +5,8 @@ compatibility_date = "2026-04-29"
 [vars]
 GITHUB_REPO = "open-adblock/open-adblock"
 GITHUB_LABELS = "filter:breakage,extension-report,needs-triage"
+GITHUB_UPLOAD_BRANCH = "main"
 ALLOWED_ORIGINS = "chrome-extension://*,moz-extension://*"
-# Required when screenshot reports are enabled.
-# SCREENSHOT_PUBLIC_BASE_URL = "https://screenshots.openadblock.org"
-
-# [[r2_buckets]]
-# binding = "SCREENSHOT_BUCKET"
-# bucket_name = "openadblock-report-screenshots"
 
 # Set this before deploying:
 #   wrangler secret put GITHUB_TOKEN

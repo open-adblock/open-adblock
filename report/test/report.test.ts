@@ -118,38 +118,47 @@ describe("createGitHubIssue", () => {
       }
     }, new Date("2026-04-29T15:10:00.000Z"));
     const calls: Request[] = [];
-    const puts: Array<{ key: string; value: Uint8Array; options: R2PutOptions }> = [];
     const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push(new Request(input, init));
-      if (calls.length === 1) {
+      const url = String(input);
+      if (url.includes("/contents/")) {
+        return Response.json({
+          content: {
+            download_url:
+              "https://raw.githubusercontent.com/open-adblock/open-adblock/main/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
+          }
+        });
+      }
+      if (url.includes("/search/issues")) {
         return Response.json({ items: [] });
       }
       return Response.json({ number: 51, html_url: "https://github.com/open-adblock/open-adblock/issues/51" });
     };
-    const bucket = {
-      put: async (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null | Blob, options?: R2PutOptions) => {
-        puts.push({ key, value: value as Uint8Array, options: options || {} });
-        return null;
-      }
-    } as unknown as R2Bucket;
 
     const issue = await createGitHubIssue(
       {
         GITHUB_TOKEN: "token",
-        SCREENSHOT_BUCKET: bucket,
-        SCREENSHOT_PUBLIC_BASE_URL: "https://screenshots.example"
+        GITHUB_REPO: "open-adblock/open-adblock"
       },
       report,
       fetcher as typeof fetch
     );
 
-    expect(issue.screenshotUrl).toBe("https://screenshots.example/screenshots/2026-04-29/screen.example/screen-1.jpg");
-    expect(puts[0]).toMatchObject({
-      key: "screenshots/2026-04-29/screen.example/screen-1.jpg"
+    expect(issue.screenshotUrl).toBe(
+      "https://raw.githubusercontent.com/open-adblock/open-adblock/main/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
+    );
+    expect(calls[0].url).toBe(
+      "https://api.github.com/repos/open-adblock/open-adblock/contents/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
+    );
+    expect(await calls[0].json()).toMatchObject({
+      message: "Add report screenshot for screen.example",
+      content: "aGVsbG8=",
+      branch: "main"
     });
-    expect(puts[0].options.httpMetadata).toEqual({ contentType: "image/jpeg" });
-    expect(await calls[1].json()).toMatchObject({
-      body: expect.stringContaining("![Screenshot](https://screenshots.example/screenshots/2026-04-29/screen.example/screen-1.jpg)")
+    expect(await calls[2].json()).toMatchObject({
+      body: expect.stringContaining(
+        "![Screenshot](https://raw.githubusercontent.com/open-adblock/open-adblock/main/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg)"
+      )
     });
   });
 
