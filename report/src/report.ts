@@ -48,6 +48,7 @@ type ExistingGitHubIssue = {
 };
 
 const DEFAULT_REPO = "open-adblock/open-adblock";
+const DEFAULT_UPLOAD_BRANCH = "report-screenshots";
 const REQUIRED_LABELS = ["filter:breakage"];
 const DEFAULT_LABELS = ["filter:breakage", "extension-report", "needs-triage"];
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -395,7 +396,7 @@ async function uploadScreenshotToGitHub(env: Env, report: NormalizedReport, fetc
   }
 
   const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);
-  const branch = sanitizeBranchName(env.GITHUB_UPLOAD_BRANCH || "main");
+  const branch = sanitizeBranchName(env.GITHUB_UPLOAD_BRANCH || DEFAULT_UPLOAD_BRANCH);
   const path = [
     ".github",
     "report-screenshots",
@@ -439,7 +440,7 @@ function sanitizeKeyPart(value: string): string {
 }
 
 function sanitizeBranchName(value: string): string {
-  return value.replace(/[^A-Za-z0-9_./-]/g, "").replace(/^\/+|\/+$/g, "") || "main";
+  return value.replace(/[^A-Za-z0-9_./-]/g, "").replace(/^\/+|\/+$/g, "") || DEFAULT_UPLOAD_BRANCH;
 }
 
 function encodeURIComponentPath(path: string): string {

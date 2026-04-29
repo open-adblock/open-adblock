@@ -5,7 +5,7 @@ compatibility_date = "2026-04-29"
 [vars]
 GITHUB_REPO = "open-adblock/open-adblock"
 GITHUB_LABELS = "filter:breakage,extension-report,needs-triage"
-GITHUB_UPLOAD_BRANCH = "main"
+GITHUB_UPLOAD_BRANCH = "report-screenshots"
 ALLOWED_ORIGINS = "chrome-extension://*,moz-extension://*"
 
 # Set this before deploying:

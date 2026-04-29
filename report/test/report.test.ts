@@ -125,7 +125,7 @@ describe("createGitHubIssue", () => {
         return Response.json({
           content: {
             download_url:
-              "https://raw.githubusercontent.com/open-adblock/open-adblock/main/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
+              "https://raw.githubusercontent.com/open-adblock/open-adblock/report-screenshots/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
           }
         });
       }
@@ -145,7 +145,7 @@ describe("createGitHubIssue", () => {
     );
 
     expect(issue.screenshotUrl).toBe(
-      "https://raw.githubusercontent.com/open-adblock/open-adblock/main/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
+      "https://raw.githubusercontent.com/open-adblock/open-adblock/report-screenshots/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
     );
     expect(calls[0].url).toBe(
       "https://api.github.com/repos/open-adblock/open-adblock/contents/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg"
@@ -153,11 +153,11 @@ describe("createGitHubIssue", () => {
     expect(await calls[0].json()).toMatchObject({
       message: "Add report screenshot for screen.example",
       content: "aGVsbG8=",
-      branch: "main"
+      branch: "report-screenshots"
     });
     expect(await calls[2].json()).toMatchObject({
       body: expect.stringContaining(
-        "![Screenshot](https://raw.githubusercontent.com/open-adblock/open-adblock/main/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg)"
+        "![Screenshot](https://raw.githubusercontent.com/open-adblock/open-adblock/report-screenshots/.github/report-screenshots/2026-04-29/screen.example/screen-1.jpg)"
       )
     });
   });
