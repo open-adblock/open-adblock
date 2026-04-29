@@ -2,6 +2,14 @@
 
 Cloudflare Worker endpoint for extension reports. Reports are validated and forwarded to GitHub Issues in `open-adblock/open-adblock`.
 
+Issues are grouped by hostname with titles like:
+
+```text
+Breakage: `domain.com`
+```
+
+When an issue with the same title already exists, the report is appended as a new comment. If that issue is closed, the Worker reopens it after adding the comment.
+
 ## Endpoints
 
 - `GET /health`

@@ -20,11 +20,20 @@ export type NormalizedReport = {
 export type GitHubIssue = {
   number: number;
   url: string;
+  created: boolean;
+  commented: boolean;
+  reopened: boolean;
 };
 
 export type Fetcher = typeof fetch;
 
 type ReportCategory = "breakage" | "missed_ad" | "false_positive" | "other";
+type ExistingGitHubIssue = {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+};
 
 const DEFAULT_REPO = "open-adblock/open-adblock";
 const DEFAULT_LABELS = ["extension-report", "needs-triage"];
@@ -110,17 +119,33 @@ export async function createGitHubIssue(
   }
 
   const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);
+  const tokenHeaders = buildGitHubHeaders(token);
+  const title = buildIssueTitle(report);
+  const existingIssue = await findExistingIssue(repo, tokenHeaders, report, fetcher);
+
+  if (existingIssue) {
+    await addGitHubIssueComment(repo, tokenHeaders, existingIssue.number, report, fetcher);
+    let reopened = false;
+
+    if (existingIssue.state === "closed") {
+      await reopenGitHubIssue(repo, tokenHeaders, existingIssue.number, fetcher);
+      reopened = true;
+    }
+
+    return {
+      number: existingIssue.number,
+      url: existingIssue.url,
+      created: false,
+      commented: true,
+      reopened
+    };
+  }
+
   const response = await fetcher(`https://api.github.com/repos/${repo}/issues`, {
     method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "openadblock-report-worker",
-      "X-GitHub-Api-Version": "2022-11-28"
-    },
+    headers: tokenHeaders,
     body: JSON.stringify({
-      title: buildIssueTitle(report),
+      title,
       body: buildIssueBody(report),
       labels: parseLabels(env.GITHUB_LABELS)
     })
@@ -143,7 +168,7 @@ export async function createGitHubIssue(
     throw new ReportError(502, "github_issue_invalid", "GitHub returned an invalid issue response");
   }
 
-  return { number, url };
+  return { number, url, created: true, commented: false, reopened: false };
 }
 
 export function getAllowedCorsOrigin(origin: string, allowedOrigins = ""): string {
@@ -166,7 +191,7 @@ export function getAllowedCorsOrigin(origin: string, allowedOrigins = ""): strin
 }
 
 export function buildIssueTitle(report: NormalizedReport): string {
-  return truncate(`[${CATEGORY_LABELS[report.category]}] ${report.hostname}`, 120);
+  return truncate(`Breakage: \`${getReportDomain(report)}\``, 120);
 }
 
 export function buildIssueBody(report: NormalizedReport): string {
@@ -192,6 +217,118 @@ export function buildIssueBody(report: NormalizedReport): string {
   }
 
   return lines.join("\n");
+}
+
+export function buildIssueCommentBody(report: NormalizedReport): string {
+  return ["## Additional report", buildIssueBody(report)].join("\n\n");
+}
+
+async function findExistingIssue(
+  repo: string,
+  headers: HeadersInit,
+  report: NormalizedReport,
+  fetcher: Fetcher
+): Promise<ExistingGitHubIssue | null> {
+  const title = buildIssueTitle(report);
+  const domain = getReportDomain(report);
+  const params = new URLSearchParams({
+    q: `repo:${repo} is:issue in:title ${domain}`,
+    per_page: "20"
+  });
+  const response = await fetcher(`https://api.github.com/search/issues?${params}`, {
+    headers
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ReportError(
+      502,
+      "github_issue_search_failed",
+      `GitHub issue search failed with ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+
+  const result = (await response.json()) as {
+    items?: Array<{ number?: unknown; title?: unknown; html_url?: unknown; state?: unknown }>;
+  };
+  const issue = (result.items || []).find((item) => asString(item.title) === title);
+  if (!issue) return null;
+
+  const number = Number(issue.number);
+  const url = asString(issue.html_url);
+  const state = asString(issue.state);
+
+  if (!Number.isInteger(number) || !url) return null;
+
+  return {
+    number,
+    title,
+    url,
+    state
+  };
+}
+
+async function addGitHubIssueComment(
+  repo: string,
+  headers: HeadersInit,
+  issueNumber: number,
+  report: NormalizedReport,
+  fetcher: Fetcher
+): Promise<void> {
+  const response = await fetcher(`https://api.github.com/repos/${repo}/issues/${issueNumber}/comments`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      body: buildIssueCommentBody(report)
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ReportError(
+      502,
+      "github_issue_comment_failed",
+      `GitHub issue comment failed with ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+}
+
+async function reopenGitHubIssue(
+  repo: string,
+  headers: HeadersInit,
+  issueNumber: number,
+  fetcher: Fetcher
+): Promise<void> {
+  const response = await fetcher(`https://api.github.com/repos/${repo}/issues/${issueNumber}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({
+      state: "open"
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ReportError(
+      502,
+      "github_issue_reopen_failed",
+      `GitHub issue reopen failed with ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+}
+
+function buildGitHubHeaders(token: string): HeadersInit {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "User-Agent": "openadblock-report-worker",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+
+function getReportDomain(report: NormalizedReport): string {
+  return report.hostname.replace(/^www\./, "");
 }
 
 function normalizeCategory(value: string): ReportCategory {
