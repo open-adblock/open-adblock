@@ -6,13 +6,6 @@ name: deploy-udp
 #   FLY_API_TOKEN - a fly.io deploy token scoped to both apps.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "dns/**"
-      - "filters/dns/**"
-      - ".dockerignore"
-      - ".github/workflows/deploy-udp.yml"
   workflow_dispatch:
 
 concurrency:
