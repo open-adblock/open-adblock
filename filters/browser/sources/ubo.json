@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "name": "uBlock filters",
+      "url": "https://github.com/uBlockOrigin/uAssets",
+      "license": "GPL-3.0",
+      "bundled": false,
+      "notes": "Not bundled in the initial scaffold. Future snapshots must include attribution and notices."
+    },
+    {
+      "name": "EasyList",
+      "url": "https://easylist.to/easylist/easylist.txt",
+      "license": "GPL-3.0-or-later",
+      "bundled": true,
+      "notes": "A small CNN cosmetic fixture is bundled for CSS filtering verification. EasyList is part of common uBO default filtering setups."
+    }
+  ]
+}

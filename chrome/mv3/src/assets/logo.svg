@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="OpenAdBlock">
+  <path d="M64 15 105 30.4v33.2c0 24.9-16.8 43.4-41 49.4-24.2-6-41-24.5-41-49.4V30.4L64 15Z" fill="#84cc16"/>
+  <path d="M64 24.8 96.5 37v26.2c0 20.2-12.9 35.1-32.5 40.7-19.6-5.6-32.5-20.5-32.5-40.7V37L64 24.8Z" fill="#f7fee7" opacity=".22"/>
+  <path d="M64 20.5 100.6 34v29.1c0 22.2-14.7 38.9-36.6 44.8-21.9-5.9-36.6-22.6-36.6-44.8V34L64 20.5Z" fill="none" stroke="#f7fee7" stroke-width="7" stroke-linejoin="round"/>
+  <path d="m46.5 65.4 11.9 11.9 24-27" fill="none" stroke="#0f0f0e" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

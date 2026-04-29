@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "version": "browser-packaged-2026-04-28",
+  "publishedAt": "2026-04-28T00:00:00.000Z",
+  "minimumExtensionVersion": "0.1.0",
+  "reportEndpointUrl": "https://reports.openadblock.org/api/reports",
+  "files": [
+    {
+      "type": "allowlist-network",
+      "name": "OpenAdBlock browser network allowlist",
+      "url": "browser/allowlist/network.txt",
+      "license": "PolyForm-Noncommercial-1.0.0",
+      "revision": "2026-04-28"
+    },
+    {
+      "type": "allowlist-cosmetic",
+      "name": "OpenAdBlock browser cosmetic allowlist",
+      "url": "browser/allowlist/cosmetic.txt",
+      "license": "PolyForm-Noncommercial-1.0.0",
+      "revision": "2026-04-28"
+    }
+  ]
+}

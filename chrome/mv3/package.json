@@ -1,0 +1,13 @@
+{
+  "name": "openadblock-mv3",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "filters:link": "node scripts/link-filters.mjs",
+    "prevalidate": "npm run filters:link",
+    "test": "node --test tests/*.test.mjs",
+    "check": "npm run validate && npm test",
+    "validate": "node scripts/validate-extension.mjs"
+  }
+}

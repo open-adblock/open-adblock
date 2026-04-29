@@ -1,0 +1,27 @@
+[workspace]
+members = ["engine", "engine/wasm", "udp"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/open-adblock/open-adblock"
+
+[workspace.dependencies]
+anyhow = "1"
+byteorder = "1"
+fst = "0.4"
+fxhash = "0.2"
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
+
+[profile.release-wasm]
+inherits = "release"
+opt-level = "z"

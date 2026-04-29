@@ -1,0 +1,4 @@
+# dnsmasq address records
+address=/ads.example.com/0.0.0.0
+address=/tracker.example.net/0.0.0.0
+server=/safe.example.com/1.1.1.1

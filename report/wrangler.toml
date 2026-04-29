@@ -1,0 +1,14 @@
+name = "openadblock-report-worker"
+main = "src/index.ts"
+compatibility_date = "2026-04-29"
+
+[vars]
+GITHUB_REPO = "open-adblock/open-adblock"
+GITHUB_LABELS = "extension-report,needs-triage"
+ALLOWED_ORIGINS = "chrome-extension://*,moz-extension://*"
+
+# Set this before deploying:
+#   wrangler secret put GITHUB_TOKEN
+#
+# Optional production route:
+# routes = [{ pattern = "reports.openadblock.org/*", custom_domain = true }]

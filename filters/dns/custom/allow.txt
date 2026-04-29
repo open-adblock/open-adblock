@@ -1,0 +1,2 @@
+# Custom allow list. These domains override block rules from every upstream.
+# Use when upstreams have false positives.

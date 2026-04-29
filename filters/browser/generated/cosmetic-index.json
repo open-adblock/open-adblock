@@ -1,0 +1,31 @@
+{
+  "version": "packaged-easylist-cnn-2026-04-28",
+  "updatedAt": 1777334400000,
+  "global": [],
+  "byHost": {
+    "cnn.com": [
+      "#js-outbrain-rightrail-ads-module",
+      "#partner-zone",
+      "#sponsored-outbrain-1",
+      ".ad",
+      ".ad-feedback__modal",
+      ".ad-slot-dynamic",
+      ".ad-slot-header__wrapper",
+      ".ad-slot__ad-wrapper",
+      ".featured-product__card",
+      ".product-offer-card-container_related-products",
+      ".stack__ads",
+      ".zone__ads",
+      "[data-zone-label=\"Paid Partner Content\"]"
+    ]
+  },
+  "exceptions": {
+    "global": [],
+    "byHost": {
+      "cnn.com": [
+        "#outbrain_widget_0"
+      ]
+    }
+  },
+  "unsupported": []
+}

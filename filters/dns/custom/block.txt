@@ -1,0 +1,2 @@
+# Custom block list. Domains here are blocked in both light and pro presets.
+# One domain per line, `#` for comments, blank lines ignored.

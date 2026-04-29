@@ -1,0 +1,12 @@
+NOTICE — open-adblock DNS (preset: {preset})
+
+This service uses upstream DNS blocklists curated by third parties. Per each
+upstream's license, we list them below along with retrieval metadata.
+
+{sources}
+
+You may obtain the source of this service and the upstream content used to
+build the filter blob from:
+  https://github.com/open-adblock/open-adblock/tree/main/dns
+
+Last rebuilt: {timestamp}

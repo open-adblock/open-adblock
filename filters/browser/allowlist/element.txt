@@ -1,0 +1,2 @@
+! User element blocking rules are stored locally at runtime.
+! Future curated element rules can live in open-adblock/open-adblock/filters/browser if needed.

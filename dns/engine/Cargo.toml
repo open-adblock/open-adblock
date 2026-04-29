@@ -1,0 +1,27 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "DNS filter matching engine (shared by UDP server and DoH worker)"
+
+[lib]
+name = "engine"
+
+[[bin]]
+name = "engine-compile"
+path = "src/bin/compile.rs"
+
+[dependencies]
+anyhow.workspace = true
+byteorder.workspace = true
+fst.workspace = true
+fxhash.workspace = true
+regex.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"

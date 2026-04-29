@@ -1,0 +1,132 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dns-rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dns
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dns -> target
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo check --target wasm32-unknown-unknown -p engine --lib
+      - run: cargo check --target wasm32-unknown-unknown -p engine-wasm
+
+  dns-wasm:
+    runs-on: ubuntu-latest
+    needs: dns-rust
+    defaults:
+      run:
+        working-directory: dns
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dns -> target
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - run: sudo apt-get install -y binaryen
+      - run: cd engine/wasm && wasm-pack build --target web --release
+      - run: |
+          wasm-opt -Oz \
+            --enable-bulk-memory --enable-sign-ext \
+            --enable-mutable-globals --enable-nontrapping-float-to-int \
+            --enable-reference-types \
+            engine/wasm/pkg/engine_wasm_bg.wasm \
+            -o engine/wasm/pkg/engine_wasm_bg.wasm.tmp
+          mv engine/wasm/pkg/engine_wasm_bg.wasm.tmp engine/wasm/pkg/engine_wasm_bg.wasm
+      - name: Size check
+        run: |
+          size=$(stat -c%s engine/wasm/pkg/engine_wasm_bg.wasm)
+          echo "WASM size: $size bytes"
+          if [ "$size" -gt 1048576 ]; then
+            echo "WASM > 1 MiB, above budget"
+            exit 1
+          fi
+
+  dns-deno:
+    runs-on: ubuntu-latest
+    needs: dns-wasm
+    defaults:
+      run:
+        working-directory: dns
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dns -> target
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - run: sudo apt-get install -y binaryen
+      - name: Build fixture WASM + filters.bin
+        run: |
+          mkdir -p doh/wasm doh/tests/fixtures /tmp/fixt/custom /tmp/fixt/fetched
+          printf "hand-blocked.example.com\n" > /tmp/fixt/custom/block.txt
+          printf "hand-allowed.example.com\n" > /tmp/fixt/custom/allow.txt
+          printf "*.ads.example.com\n" > /tmp/fixt/custom/wildcards.txt
+          : > /tmp/fixt/custom/regex.txt
+          : > /tmp/fixt/urls.txt
+          cargo run --quiet -p engine --bin engine-compile -- \
+            --urls /tmp/fixt/urls.txt \
+            --custom /tmp/fixt/custom \
+            --fetched /tmp/fixt/fetched \
+            -o doh/tests/fixtures/filters.bin
+          cd engine/wasm && wasm-pack build --target web --release
+          cd "$GITHUB_WORKSPACE/dns"
+          cp engine/wasm/pkg/engine_wasm.js       doh/wasm/engine.js
+          cp engine/wasm/pkg/engine_wasm.d.ts     doh/wasm/engine_wasm.d.ts
+          cp engine/wasm/pkg/engine_wasm_bg.wasm  doh/wasm/engine_bg.wasm
+      - run: deno fmt --check
+      - run: deno lint
+      - run: cd doh && deno fmt --check
+      - run: cd doh && deno lint
+      - run: cd doh && deno test --allow-read --allow-net src/
+      - run: deno test --allow-read scripts/
+
+  chrome:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chrome/mv3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run check
+
+  report:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: report
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: report/package-lock.json
+      - run: npm ci
+      - run: npm run check

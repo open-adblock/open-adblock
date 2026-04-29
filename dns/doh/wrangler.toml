@@ -1,0 +1,46 @@
+name = "dns-doh"
+main = "src/worker.ts"
+compatibility_date = "2026-04-01"
+workers_dev = true
+
+# Two routes share the same worker; index.ts dispatches by hostname.
+routes = [
+  { pattern = "dns.open-adblock.com/*",     zone_name = "open-adblock.com" },
+  { pattern = "pro.dns.open-adblock.com/*", zone_name = "open-adblock.com" },
+]
+
+[vars]
+UPSTREAM = "https://1.1.1.1/dns-query"
+DEFAULT_PRESET = "light"
+
+# Fetches upstream lists, compiles filter blobs, builds + optimizes WASM, and
+# stages everything under `doh/wasm/` before wrangler bundles. Runs on every
+# `wrangler deploy` — including Cloudflare Workers Builds, where the repo is
+# checked out fresh and `doh/wasm/` (gitignored) does not yet exist.
+[build]
+command = "bash ../scripts/build-ci.sh"
+
+# WASM module compiled into the bundle. `fallthrough = true` so wrangler's
+# built-in `**/*.wasm` CompiledWasm rule doesn't error on the same file.
+[[rules]]
+type = "CompiledWasm"
+globs = ["wasm/engine_bg.wasm"]
+fallthrough = true
+
+# Filter blobs + NOTICE bundled as byte data.
+[[rules]]
+type = "Data"
+globs = ["wasm/*.bin"]
+fallthrough = true
+
+[[rules]]
+type = "Text"
+globs = ["wasm/NOTICE.txt"]
+fallthrough = true
+
+# Module binding aliases (env.*). The actual import in code uses
+#   import wasm from "../wasm/engine_bg.wasm"   (CompiledWasm)
+#   import light from "../wasm/light.bin"       (Data → Uint8Array)
+#   import pro   from "../wasm/pro.bin"
+#   import notice from "../wasm/NOTICE.txt"
+# and index.ts re-packs into the Env shape expected by fetch().

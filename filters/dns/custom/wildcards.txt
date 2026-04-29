@@ -1,0 +1,2 @@
+# Suffix (wildcard) block rules.
+# `*.doubleclick.net` or `doubleclick.net` — both block the domain and all subdomains.

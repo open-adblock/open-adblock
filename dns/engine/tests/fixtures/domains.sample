@@ -1,0 +1,4 @@
+# sample domain-only blocklist (Hagezi / OISD format)
+ads.example.com
+tracker.example.net
+metrics.example.org

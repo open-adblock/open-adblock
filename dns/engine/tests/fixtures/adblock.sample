@@ -1,0 +1,7 @@
+! AdBlock Plus filter syntax
+! comments start with !
+||ads.example.com^
+||tracker.example.net^
+@@||safe.ads.example.com^
+! partial URL rules we ignore for DNS-only
+/pixel.gif?*

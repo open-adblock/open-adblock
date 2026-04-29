@@ -1,0 +1,6 @@
+# Light preset (default, dns.open-adblock.com)
+# Target: FP-free everyday blocking. ~135k entries.
+#
+# Upstream license: GPLv3. See dns/NOTICE.template for distribution obligations.
+
+https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/light.txt   # Hagezi Light (GPLv3)

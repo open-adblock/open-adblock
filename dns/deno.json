@@ -1,0 +1,14 @@
+{
+  "imports": {
+    "std/": "https://deno.land/std@0.224.0/",
+    "qrcode": "npm:qrcode@1.5.4"
+  },
+  "fmt": {
+    "include": ["scripts/"],
+    "lineWidth": 100,
+    "indentWidth": 2
+  },
+  "lint": {
+    "include": ["scripts/"]
+  }
+}

@@ -1,0 +1,30 @@
+[package]
+name = "dns-udp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "UDP DNS server with filter matching and upstream forwarding"
+
+[lib]
+name = "dns_udp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dns-udp"
+path = "src/main.rs"
+
+[dependencies]
+engine = { path = "../engine" }
+anyhow.workspace = true
+hickory-proto = "0.24"
+serde.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "time"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
+hickory-client = "0.24"

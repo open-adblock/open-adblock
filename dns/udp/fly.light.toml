@@ -1,0 +1,38 @@
+# fly.io config for the UDP DNS server — Light preset.
+# Paired host: dns.open-adblock.com (A/AAAA → fly Anycast IPs).
+#
+# Deploy (run from monorepo root):
+#   flyctl deploy --config dns/udp/fly.light.toml
+#
+# First-time setup:
+#   flyctl apps create open-adblock-dns-light
+#   flyctl ips allocate-v4 --shared -a open-adblock-dns-light   # dedicated v4 also fine
+#   flyctl ips allocate-v6 -a open-adblock-dns-light
+#   flyctl scale count 1 --region iad -a open-adblock-dns-light
+#
+# To expand to more regions (DNS benefits from anycast):
+#   flyctl scale count 4 --region iad,ams,nrt,sjc -a open-adblock-dns-light
+
+app            = "open-adblock-dns-light"
+primary_region = "iad"
+
+[build]
+  dockerfile = "dns/udp/Dockerfile"
+
+[env]
+  PRESET   = "light"
+  RUST_LOG = "info,dns_udp=info"
+
+[[services]]
+  protocol             = "udp"
+  internal_port        = 53
+  auto_stop_machines   = "off"
+  auto_start_machines  = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 53
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "256mb"

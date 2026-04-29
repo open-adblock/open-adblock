@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenAdBlock Settings</title>
+    <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="../assets/logo.svg" width="20" height="20" alt="">
+          <div>
+            <strong>OpenAdBlock</strong>
+            <span id="version">v0.1.0</span>
+          </div>
+        </div>
+        <nav>
+          <button class="nav-item is-active" data-view="general">General</button>
+          <button class="nav-item" data-view="filters">Filters</button>
+          <button class="nav-item" data-view="local">Local rules</button>
+          <button class="nav-item" data-view="about">About</button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <section class="view is-active" id="view-general">
+          <header class="page-header">
+            <h1>General</h1>
+          </header>
+          <div class="page-body">
+            <section class="setting-section">
+              <h2>Appearance</h2>
+              <div class="setting-row">
+                <div>
+                  <strong>Theme</strong>
+                  <p>Choose how OpenAdBlock looks.</p>
+                </div>
+                <div class="segmented" id="themeControl">
+                  <button data-theme-value="system">System</button>
+                  <button data-theme-value="light">Light</button>
+                  <button data-theme-value="dark">Dark</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="setting-section">
+              <h2>Remote updates</h2>
+              <div class="setting-row">
+                <div>
+                  <strong>Filter data updates</strong>
+                  <p>Download supported network and cosmetic filter data. No remote code is executed.</p>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" id="remoteUpdates">
+                  <span></span>
+                </label>
+              </div>
+              <label class="field">
+                <span>Manifest URL</span>
+                <input id="remoteManifestUrl" type="url" spellcheck="false">
+              </label>
+              <label class="field">
+                <span>Report endpoint</span>
+                <input id="reportEndpointUrl" type="url" spellcheck="false">
+              </label>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-filters">
+          <header class="page-header">
+            <h1>Filters</h1>
+            <button class="primary" id="runUpdate">Update now</button>
+          </header>
+          <div class="page-body">
+            <div class="status-grid">
+              <article>
+                <span>Remote version</span>
+                <strong id="remoteVersion">None</strong>
+              </article>
+              <article>
+                <span>Last updated</span>
+                <strong id="remoteUpdatedAt">Never</strong>
+              </article>
+              <article>
+                <span>Cosmetic selectors</span>
+                <strong id="cosmeticCount">0</strong>
+              </article>
+            </div>
+            <div class="notice" id="remoteError" hidden></div>
+            <section class="setting-section">
+              <h2>Sources</h2>
+              <div class="list" id="sourceList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-local">
+          <header class="page-header">
+            <h1>Local rules</h1>
+          </header>
+          <div class="page-body">
+            <section class="setting-section">
+              <h2>Blocked elements</h2>
+              <div class="list" id="userRulesList"></div>
+            </section>
+            <section class="setting-section">
+              <h2>Breakage reports</h2>
+              <div class="list" id="reportsList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-about">
+          <header class="page-header">
+            <h1>About</h1>
+          </header>
+          <div class="page-body">
+            <article class="about-card">
+              <img class="about-logo" src="../assets/logo.svg" width="48" height="48" alt="">
+              <div>
+                <h2>OpenAdBlock</h2>
+                <p>A lightweight, open-source ad blocker with breakage-free filters, built for fast and stable browsing.</p>
+                <div class="meta">
+                  <span>MIT code license</span>
+                  <span>Manifest V3</span>
+                  <span>GitHub reports</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast" hidden></div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

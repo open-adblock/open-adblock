@@ -1,0 +1,38 @@
+name: deploy-udp
+
+# Deploys the Rust UDP DNS server to fly.io for both presets.
+#
+# Required secrets:
+#   FLY_API_TOKEN - a fly.io deploy token scoped to both apps.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dns/**"
+      - "filters/dns/**"
+      - ".dockerignore"
+      - ".github/workflows/deploy-udp.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-udp-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [light, pro]
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: flyctl deploy (${{ matrix.preset }})
+        run: |
+          flyctl deploy \
+            --config "dns/udp/fly.${{ matrix.preset }}.toml" \
+            --remote-only

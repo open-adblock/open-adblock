@@ -1,0 +1,37 @@
+# fly.io config for the UDP DNS server — Pro preset.
+# Paired host: pro.dns.open-adblock.com (A/AAAA → fly Anycast IPs).
+#
+# Deploy (run from monorepo root):
+#   flyctl deploy --config dns/udp/fly.pro.toml
+#
+# First-time setup:
+#   flyctl apps create open-adblock-dns-pro
+#   flyctl ips allocate-v4 --shared -a open-adblock-dns-pro
+#   flyctl ips allocate-v6 -a open-adblock-dns-pro
+#   flyctl scale count 1 --region iad -a open-adblock-dns-pro
+#
+# Pro list is ~400k entries vs. light's ~135k; memory bumped accordingly.
+
+app            = "open-adblock-dns-pro"
+primary_region = "iad"
+
+[build]
+  dockerfile = "dns/udp/Dockerfile"
+
+[env]
+  PRESET   = "pro"
+  RUST_LOG = "info,dns_udp=info"
+
+[[services]]
+  protocol             = "udp"
+  internal_port        = 53
+  auto_stop_machines   = "off"
+  auto_start_machines  = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 53
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"

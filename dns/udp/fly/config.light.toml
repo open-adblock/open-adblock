@@ -1,0 +1,5 @@
+listen = "0.0.0.0:53"
+upstream = "1.1.1.1:53"
+preset = "light"
+filters_dir = "/app/filters"
+block_response = "nxdomain"

@@ -1,0 +1,22 @@
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Filter source data lives in https://github.com/open-adblock/filters.
+filters/
+
+doh/wasm/engine_bg.wasm
+doh/wasm/engine.js
+doh/wasm/engine.d.ts
+doh/wasm/engine_wasm.d.ts
+doh/wasm/light.bin
+doh/wasm/pro.bin
+doh/wasm/NOTICE.txt
+doh/node_modules/
+doh/.wrangler/
+
+engine/wasm/pkg/
+
+.DS_Store
+.env
+.env.local

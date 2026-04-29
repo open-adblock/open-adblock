@@ -1,0 +1,7 @@
+# sample hosts file fragment
+# comments and blank lines ignored
+
+0.0.0.0 ads.example.com
+0.0.0.0 tracker.example.net
+127.0.0.1 localhost     # real entries we should ignore (loopback)
+0.0.0.0 metrics.example.org other-on-same-line.example.com

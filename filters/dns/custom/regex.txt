@@ -1,0 +1,4 @@
+# Regex block patterns. Each line is a Rust-compatible regex.
+# Add sparingly — regex scans run linearly per query.
+# Example:
+#   ^ad-\d+\.example\.com$
