@@ -162,6 +162,98 @@ describe("createGitHubIssue", () => {
     });
   });
 
+  it("recreates a missing screenshot upload branch and retries the upload", async () => {
+    const report = normalizeReportPayload({
+      id: "missing-branch-1",
+      category: "breakage",
+      details: "Layout is broken",
+      page: { url: "https://branch.example/", hostname: "branch.example" },
+      screenshot: {
+        dataUrl: "data:image/png;base64,aGVsbG8="
+      }
+    }, new Date("2026-04-29T16:20:00.000Z"));
+    const calls: Request[] = [];
+    let uploadAttempts = 0;
+    const sourceSha = "a".repeat(40);
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(new Request(input, init));
+      const url = String(input);
+
+      if (url.includes("/contents/")) {
+        uploadAttempts += 1;
+        if (uploadAttempts === 1) {
+          return Response.json(
+            { message: "No commit found for the ref report-screenshots" },
+            { status: 422 }
+          );
+        }
+        return Response.json({
+          content: {
+            download_url:
+              "https://raw.githubusercontent.com/open-adblock/open-adblock/report-screenshots/.github/report-screenshots/2026-04-29/branch.example/missing-branch-1.png"
+          }
+        });
+      }
+
+      if (url.endsWith("/git/ref/heads/report-screenshots")) {
+        return Response.json({ message: "Not Found" }, { status: 404 });
+      }
+
+      if (url === "https://api.github.com/repos/open-adblock/open-adblock") {
+        return Response.json({ default_branch: "main" });
+      }
+
+      if (url.endsWith("/git/ref/heads/main")) {
+        return Response.json({ object: { sha: sourceSha } });
+      }
+
+      if (url.endsWith("/git/refs")) {
+        return Response.json({ ref: "refs/heads/report-screenshots" }, { status: 201 });
+      }
+
+      if (url.includes("/search/issues")) {
+        return Response.json({ items: [] });
+      }
+
+      return Response.json({ number: 52, html_url: "https://github.com/open-adblock/open-adblock/issues/52" });
+    };
+
+    const issue = await createGitHubIssue(
+      {
+        GH_TOKEN: "token",
+        GITHUB_REPO: "open-adblock/open-adblock"
+      },
+      report,
+      fetcher as typeof fetch
+    );
+
+    expect(issue.screenshotUrl).toBe(
+      "https://raw.githubusercontent.com/open-adblock/open-adblock/report-screenshots/.github/report-screenshots/2026-04-29/branch.example/missing-branch-1.png"
+    );
+    expect(uploadAttempts).toBe(2);
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://api.github.com/repos/open-adblock/open-adblock/contents/.github/report-screenshots/2026-04-29/branch.example/missing-branch-1.png",
+      "https://api.github.com/repos/open-adblock/open-adblock/git/ref/heads/report-screenshots",
+      "https://api.github.com/repos/open-adblock/open-adblock",
+      "https://api.github.com/repos/open-adblock/open-adblock/git/ref/heads/main",
+      "https://api.github.com/repos/open-adblock/open-adblock/git/refs",
+      "https://api.github.com/repos/open-adblock/open-adblock/contents/.github/report-screenshots/2026-04-29/branch.example/missing-branch-1.png",
+      expect.stringContaining("https://api.github.com/search/issues?"),
+      "https://api.github.com/repos/open-adblock/open-adblock/issues"
+    ]);
+    expect(await calls[4].json()).toEqual({
+      ref: "refs/heads/report-screenshots",
+      sha: sourceSha
+    });
+    expect(await calls[5].json()).toMatchObject({
+      branch: "report-screenshots",
+      content: "aGVsbG8="
+    });
+    expect(await calls[7].json()).toMatchObject({
+      body: expect.stringContaining("![Screenshot](")
+    });
+  });
+
   it("adds a comment when the domain issue already exists", async () => {
     const report = normalizeReportPayload({
       category: "breakage",

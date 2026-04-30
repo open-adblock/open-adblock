@@ -32,5 +32,5 @@ Optional environment variables:
 
 - `GITHUB_REPO`: defaults to `open-adblock/open-adblock`
 - `GITHUB_LABELS`: comma-separated issue labels; `filter:breakage` is always included
-- `GITHUB_UPLOAD_BRANCH`: branch used for screenshot files, defaults to `report-screenshots`; create this branch before enabling screenshot uploads
+- `GITHUB_UPLOAD_BRANCH`: branch used for screenshot files, defaults to `report-screenshots`; the Worker recreates it from the repository default branch if it is missing
 - `ALLOWED_ORIGINS`: comma-separated CORS origins, wildcard suffixes supported

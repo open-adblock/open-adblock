@@ -14,7 +14,7 @@ Filter data lives in the monorepo at
 - Dynamic DNR rules for remote network updates and per-site pause
 - CSS cosmetic filtering through packaged content scripts
 - In-page block element picker
-- Breakage reports submitted through the filters Cloudflare Worker with local history fallback
+- Breakage reports submitted through the filters Cloudflare Worker
 - Popup and options UI in English
 
 ## Load Locally

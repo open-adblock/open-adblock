@@ -19,6 +19,7 @@ const USER_SITE_RULE_MAX = 5000;
 const REMOTE_RULE_START = 1000000;
 const REMOTE_RULE_MAX = 20000;
 const REPORT_TIMEOUT_MS = 10000;
+const LEGACY_STORAGE_KEYS = ["reports"];
 
 const STORAGE_DEFAULTS = {
   settings: {
@@ -32,7 +33,6 @@ const STORAGE_DEFAULTS = {
     ...createDefaultStats()
   },
   pageStats: {},
-  reports: [],
   cosmeticPackaged: {
     version: null,
     updatedAt: 0,
@@ -109,6 +109,7 @@ function ensureInitialized() {
 
 async function initializeExtension() {
   await ensureStorageDefaults();
+  await removeLegacyStorageKeys();
   await loadPackagedCosmeticIndex();
   await configureActionCountBadge();
   await syncPausedSiteRules();
@@ -131,6 +132,10 @@ async function ensureStorageDefaults() {
   if (Object.keys(next).length > 0) {
     await chrome.storage.local.set(next);
   }
+}
+
+async function removeLegacyStorageKeys() {
+  await chrome.storage.local.remove(LEGACY_STORAGE_KEYS);
 }
 
 async function loadPackagedCosmeticIndex() {
@@ -202,8 +207,6 @@ async function handleMessage(message, sender) {
       return saveSettings(message.settings || {});
     case "REMOVE_USER_COSMETIC_RULE":
       return removeUserCosmeticRule(message.id);
-    case "REMOVE_REPORT":
-      return removeReport(message.id);
     case "RUN_REMOTE_UPDATE":
       return updateRemoteFilters({ force: true });
     default:
@@ -221,8 +224,7 @@ async function getPopupState() {
     "stats",
     "pageStats",
     "filters",
-    "userCosmeticRules",
-    "reports"
+    "userCosmeticRules"
   ]);
   const paused = Boolean(hostname && storage.siteState?.[hostname]?.paused);
   const networkBlocked = tab?.id ? await getTabNetworkBlockedCount(tab.id) : 0;
@@ -253,8 +255,7 @@ async function getPopupState() {
     settings: storage.settings || STORAGE_DEFAULTS.settings,
     stats: statsState.stats || storage.stats || STORAGE_DEFAULTS.stats,
     filters: storage.filters || STORAGE_DEFAULTS.filters,
-    userCosmeticRuleCount: (storage.userCosmeticRules || []).length,
-    reportCount: (storage.reports || []).length
+    userCosmeticRuleCount: (storage.userCosmeticRules || []).length
   };
 }
 
@@ -410,8 +411,7 @@ async function reportBreakage(message) {
     throw new Error("A valid page is required");
   }
 
-  const storage = await chrome.storage.local.get(["reports", "settings", "filters", "siteState", "stats", "pageStats"]);
-  const reports = storage.reports || [];
+  const storage = await chrome.storage.local.get(["settings", "filters", "siteState", "pageStats"]);
   const manifest = chrome.runtime.getManifest();
   const category = normalizeReportCategory(message.category);
   const details = String(message.details || message.reason || "").slice(0, 2000);
@@ -421,26 +421,10 @@ async function reportBreakage(message) {
     storage.settings?.reportEndpointUrl || storage.filters?.reportEndpointUrl
   );
   const screenshot = includeScreenshot ? await captureReportScreenshot(tab?.windowId) : null;
-  const report = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    url: includeUrl ? url : "",
-    hostname,
-    category,
-    details,
-    reason: details || getReportCategoryLabel(category),
-    includeUrl,
-    includeScreenshot,
-    screenshotIncluded: Boolean(screenshot?.dataUrl),
-    screenshotUrl: null,
-    status: "pending",
-    issueNumber: null,
-    issueUrl: null,
-    error: null,
-    createdAt: Date.now()
-  };
+  const reportId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pageStats = tab?.id ? storage.pageStats?.[String(tab.id)] || null : null;
   const payload = {
-    id: report.id,
+    id: reportId,
     category,
     details,
     page: {
@@ -471,20 +455,15 @@ async function reportBreakage(message) {
       }
     }
   };
+  const result = await submitReport(endpointUrl, payload);
 
-  try {
-    const result = await submitReport(endpointUrl, payload);
-    report.status = "submitted";
-    report.issueNumber = result.issue?.number || null;
-    report.issueUrl = result.issue?.url || null;
-    report.screenshotUrl = result.issue?.screenshotUrl || null;
-  } catch (error) {
-    report.status = "failed";
-    report.error = error.message || String(error);
-  }
-
-  await chrome.storage.local.set({ reports: [report, ...reports].slice(0, 100) });
-  return report;
+  return {
+    id: reportId,
+    status: "submitted",
+    issueNumber: result.issue?.number || null,
+    issueUrl: result.issue?.url || null,
+    screenshotUrl: result.issue?.screenshotUrl || null
+  };
 }
 
 async function getOptionsState() {
@@ -493,7 +472,6 @@ async function getOptionsState() {
     "siteState",
     "stats",
     "pageStats",
-    "reports",
     "userCosmeticRules",
     "cosmeticPackaged",
     "cosmeticRemote",
@@ -525,13 +503,6 @@ async function removeUserCosmeticRule(id) {
   const nextRules = userCosmeticRules.filter((rule) => rule.id !== id);
   await chrome.storage.local.set({ userCosmeticRules: nextRules });
   return { removed: userCosmeticRules.length !== nextRules.length };
-}
-
-async function removeReport(id) {
-  const { reports = [] } = await chrome.storage.local.get("reports");
-  const nextReports = reports.filter((report) => report.id !== id);
-  await chrome.storage.local.set({ reports: nextReports });
-  return { removed: reports.length !== nextReports.length };
 }
 
 async function submitReport(endpointUrl, payload) {
@@ -756,19 +727,6 @@ function normalizeReportEndpointUrl(url) {
 function normalizeReportCategory(value) {
   if (value === "missed_ad" || value === "false_positive" || value === "other") return value;
   return "breakage";
-}
-
-function getReportCategoryLabel(value) {
-  switch (normalizeReportCategory(value)) {
-    case "missed_ad":
-      return "Missed ad";
-    case "false_positive":
-      return "Site incorrectly blocked";
-    case "other":
-      return "Other";
-    default:
-      return "Page broken";
-  }
 }
 
 function normalizeHostname(value) {

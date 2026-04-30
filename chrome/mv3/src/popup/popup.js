@@ -89,7 +89,6 @@ reportForm.addEventListener("submit", async (event) => {
       includeUrl: reportIncludeUrl.checked,
       includeScreenshot: reportIncludeScreenshot.checked
     });
-    state.reportCount += 1;
     render(state);
     closeReportDialog();
     showToast(formatReportToast(report));
@@ -178,11 +177,7 @@ function formatReportToast(report) {
     return `Reported to GitHub #${report.issueNumber}`;
   }
 
-  if (report?.status === "failed") {
-    return "Saved locally. GitHub report failed.";
-  }
-
-  return "Report saved";
+  return "Report submitted";
 }
 
 function resolveTheme(theme) {
@@ -301,7 +296,6 @@ function getPreviewPopupState() {
       startedAt: new Date("2026-01-12T00:00:00").getTime()
     },
     filters: { remoteVersion: "Packaged" },
-    userCosmeticRuleCount: 0,
-    reportCount: 0
+    userCosmeticRuleCount: 0
   };
 }

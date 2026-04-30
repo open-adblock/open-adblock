@@ -12,7 +12,7 @@ OpenAdBlock is built first for Manifest V3. The initial implementation lives und
 - UI copy: English only
 - Extension code license: MIT
 - Target stores: Chrome Web Store first, then other Chromium-based stores
-- Statistics and reports: local-only, stored in `chrome.storage.local`
+- Statistics and user-created rules: local-only, stored in `chrome.storage.local`
 - Default filters: uBO filter-based network/cosmetic filtering plus an OpenAdBlock curated allowlist
 - Remote filter updates: supported for data-only filter updates
 - Permissions: broad host access is acceptable for the first version
@@ -105,7 +105,7 @@ The attached design maps to the MVP popup:
 MVP behavior:
 
 - Site toggle writes a per-site allow rule to dynamic DNR rules.
-- `Report breakage` stores a local report entry only.
+- `Report breakage` submits to the configured report endpoint without retaining a local copy.
 - Stats start conservative: show browser-provided action count where available and local lifetime counters where reliable.
 - `Block element` opens an in-page picker and stores the resulting cosmetic rule locally.
 
@@ -120,7 +120,6 @@ Next settings after MVP:
 
 - Filter list status
 - Local allowlist viewer
-- Local breakage report history
 - Local block-element rule manager
 - Remote filter update status
 - Import/export settings
@@ -242,12 +241,11 @@ Use `chrome.storage.local` for:
 - Theme
 - Enabled/paused site map
 - Lifetime counters
-- Local breakage reports
 - Local block-element rules
 - Filter build/version metadata
 - Remote filter update metadata
 
-No account, telemetry, remote analytics, or automatic report upload in MVP.
+No account, telemetry, remote analytics, or extension-side report retention. Report upload happens only after explicit user action.
 
 Suggested keys:
 
@@ -266,13 +264,6 @@ type OpenAdBlockStorage = {
     bandwidthSavedBytesEstimate: number;
     startedAt: number;
   };
-  reports: Array<{
-    id: string;
-    url: string;
-    hostname: string;
-    reason: string;
-    createdAt: number;
-  }>;
   userCosmeticRules: Array<{
     id: string;
     hostname: string;
@@ -359,11 +350,9 @@ Validation gates:
 - Compile remote cosmetic filters into local selector indexes
 - Add checksum validation and rollback
 
-### M5 - Local Stats And Reports
+### M5 - Local Stats
 
 - Add conservative local stats
-- Add local breakage report storage
-- Add options view for report history if needed
 
 ### M6 - Store Readiness
 

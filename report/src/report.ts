@@ -397,6 +397,7 @@ async function uploadScreenshotToGitHub(env: Env, report: NormalizedReport, fetc
 
   const repo = normalizeRepo(env.GITHUB_REPO || DEFAULT_REPO);
   const branch = sanitizeBranchName(env.GITHUB_UPLOAD_BRANCH || DEFAULT_UPLOAD_BRANCH);
+  const headers = buildGitHubHeaders(token);
   const path = [
     ".github",
     "report-screenshots",
@@ -404,31 +405,161 @@ async function uploadScreenshotToGitHub(env: Env, report: NormalizedReport, fetc
     getReportDomain(report),
     `${sanitizeKeyPart(report.id)}.${report.screenshot.extension}`
   ].join("/");
-  const response = await fetcher(`https://api.github.com/repos/${repo}/contents/${encodeURIComponentPath(path)}`, {
-    method: "PUT",
-    headers: buildGitHubHeaders(token),
-    body: JSON.stringify({
-      message: `Add report screenshot for ${getReportDomain(report)}`,
-      content: report.screenshot.base64,
-      branch,
-      committer: {
-        name: "OpenAdBlock Report Worker",
-        email: "reports@openadblock.org"
-      }
-    })
+  const body = JSON.stringify({
+    message: `Add report screenshot for ${getReportDomain(report)}`,
+    content: report.screenshot.base64,
+    branch,
+    committer: {
+      name: "OpenAdBlock Report Worker",
+      email: "reports@openadblock.org"
+    }
   });
+  let response = await uploadGitHubContent(repo, path, headers, body, fetcher);
+  let responseBody = response.ok ? "" : await response.text();
+
+  if (!response.ok && isMissingUploadBranchError(response.status, responseBody)) {
+    await ensureGitHubUploadBranch(repo, branch, headers, fetcher);
+    response = await uploadGitHubContent(repo, path, headers, body, fetcher);
+    responseBody = response.ok ? "" : await response.text();
+  }
 
   if (!response.ok) {
-    const body = await response.text();
     throw new ReportError(
       502,
       "github_screenshot_upload_failed",
-      `GitHub screenshot upload failed with ${response.status}: ${body.slice(0, 300)}`
+      `GitHub screenshot upload failed with ${response.status}: ${responseBody.slice(0, 300)}`
     );
   }
 
   const result = (await response.json()) as { content?: { download_url?: unknown } };
   return asString(result.content?.download_url) || buildRawGitHubUrl(repo, branch, path);
+}
+
+function uploadGitHubContent(
+  repo: string,
+  path: string,
+  headers: HeadersInit,
+  body: string,
+  fetcher: Fetcher
+): Promise<Response> {
+  return fetcher(`https://api.github.com/repos/${repo}/contents/${encodeURIComponentPath(path)}`, {
+    method: "PUT",
+    headers,
+    body
+  });
+}
+
+async function ensureGitHubUploadBranch(
+  repo: string,
+  branch: string,
+  headers: HeadersInit,
+  fetcher: Fetcher
+): Promise<void> {
+  const currentBranchResponse = await fetcher(
+    `https://api.github.com/repos/${repo}/git/ref/${encodeURIComponentPath(`heads/${branch}`)}`,
+    { headers }
+  );
+
+  if (currentBranchResponse.ok) return;
+
+  const currentBranchBody = await currentBranchResponse.text();
+  if (currentBranchResponse.status !== 404) {
+    throw new ReportError(
+      502,
+      "github_upload_branch_check_failed",
+      `GitHub upload branch check failed with ${currentBranchResponse.status}: ${currentBranchBody.slice(0, 300)}`
+    );
+  }
+
+  const defaultBranch = await getDefaultGitHubBranch(repo, headers, fetcher);
+  const sourceSha = await getGitHubBranchHeadSha(repo, defaultBranch, headers, fetcher);
+  await createGitHubBranch(repo, branch, sourceSha, headers, fetcher);
+}
+
+async function getDefaultGitHubBranch(repo: string, headers: HeadersInit, fetcher: Fetcher): Promise<string> {
+  const response = await fetcher(`https://api.github.com/repos/${repo}`, { headers });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ReportError(
+      502,
+      "github_repo_failed",
+      `GitHub repository lookup failed with ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+
+  const repoInfo = (await response.json()) as { default_branch?: unknown };
+  const defaultBranchName = asString(repoInfo.default_branch);
+  if (!defaultBranchName) {
+    throw new ReportError(502, "github_repo_invalid", "GitHub returned an invalid repository response");
+  }
+  return sanitizeBranchName(defaultBranchName);
+}
+
+async function getGitHubBranchHeadSha(
+  repo: string,
+  branch: string,
+  headers: HeadersInit,
+  fetcher: Fetcher
+): Promise<string> {
+  const response = await fetcher(
+    `https://api.github.com/repos/${repo}/git/ref/${encodeURIComponentPath(`heads/${branch}`)}`,
+    { headers }
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ReportError(
+      502,
+      "github_upload_branch_source_failed",
+      `GitHub source branch lookup failed with ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+
+  const ref = (await response.json()) as { object?: { sha?: unknown } };
+  const sha = asString(ref.object?.sha);
+  if (!/^[a-f0-9]{40}$/i.test(sha)) {
+    throw new ReportError(502, "github_upload_branch_source_invalid", "GitHub returned an invalid branch ref");
+  }
+  return sha;
+}
+
+async function createGitHubBranch(
+  repo: string,
+  branch: string,
+  sha: string,
+  headers: HeadersInit,
+  fetcher: Fetcher
+): Promise<void> {
+  const response = await fetcher(`https://api.github.com/repos/${repo}/git/refs`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      ref: `refs/heads/${branch}`,
+      sha
+    })
+  });
+
+  if (response.ok) return;
+
+  const body = await response.text();
+  if (response.status === 422 && isReferenceAlreadyExistsError(body)) return;
+
+  throw new ReportError(
+    502,
+    "github_upload_branch_create_failed",
+    `GitHub upload branch creation failed with ${response.status}: ${body.slice(0, 300)}`
+  );
+}
+
+function isMissingUploadBranchError(status: number, body: string): boolean {
+  if (status !== 404 && status !== 409 && status !== 422) return false;
+
+  const message = body.toLowerCase();
+  return message.includes("branch") || message.includes("ref") || message.includes("reference");
+}
+
+function isReferenceAlreadyExistsError(body: string): boolean {
+  const message = body.toLowerCase();
+  return message.includes("already exists") || message.includes("reference already exists");
 }
 
 function getReportDomain(report: NormalizedReport): string {

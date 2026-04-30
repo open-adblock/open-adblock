@@ -12,7 +12,6 @@ const cosmeticCount = document.getElementById("cosmeticCount");
 const remoteError = document.getElementById("remoteError");
 const sourceList = document.getElementById("sourceList");
 const userRulesList = document.getElementById("userRulesList");
-const reportsList = document.getElementById("reportsList");
 const toast = document.getElementById("toast");
 
 let state = null;
@@ -63,14 +62,6 @@ userRulesList.addEventListener("click", async (event) => {
   if (!button) return;
   await sendMessage("REMOVE_USER_COSMETIC_RULE", { id: button.dataset.removeRule });
   showToast("Removed local rule");
-  await load();
-});
-
-reportsList.addEventListener("click", async (event) => {
-  const button = event.target.closest("button[data-remove-report]");
-  if (!button) return;
-  await sendMessage("REMOVE_REPORT", { id: button.dataset.removeReport });
-  showToast("Removed report");
   await load();
 });
 
@@ -128,7 +119,6 @@ function render() {
 
   renderSources(filters.sourceSummary || []);
   renderUserRules(state.userCosmeticRules || []);
-  renderReports(state.reports || []);
 }
 
 function renderSources(sources) {
@@ -169,39 +159,6 @@ function renderUserRules(rules) {
     .join("");
 }
 
-function renderReports(reports) {
-  if (reports.length === 0) {
-    reportsList.innerHTML = `<div class="empty">No breakage reports yet.</div>`;
-    return;
-  }
-
-  reportsList.innerHTML = reports
-    .map((report) => {
-      const status = getReportStatus(report);
-      const issueLink = report.issueUrl
-        ? `<a href="${escapeHtml(report.issueUrl)}" target="_blank" rel="noopener noreferrer">#${escapeHtml(report.issueNumber || "issue")}</a>`
-        : "";
-      const screenshotLink = report.screenshotUrl
-        ? `<a href="${escapeHtml(report.screenshotUrl)}" target="_blank" rel="noopener noreferrer">screenshot</a>`
-        : "";
-      return `
-      <article class="list-item">
-        <div>
-          <strong>${escapeHtml(report.hostname)} · ${escapeHtml(formatDate(report.createdAt))}</strong>
-          <code>${escapeHtml(report.details || report.reason || report.url || "")}</code>
-          <div class="report-meta">
-            <span class="status-pill ${status.className}">${status.label}</span>
-            ${issueLink}
-            ${screenshotLink}
-          </div>
-        </div>
-        <button data-remove-report="${escapeHtml(report.id)}">Remove</button>
-      </article>
-    `;
-    })
-    .join("");
-}
-
 function switchView(viewName) {
   navItems.forEach((item) => item.classList.toggle("is-active", item.dataset.view === viewName));
   views.forEach((view) => view.classList.toggle("is-active", view.id === `view-${viewName}`));
@@ -228,18 +185,6 @@ function formatDate(timestamp) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat("en-US").format(Number(value || 0));
-}
-
-function getReportStatus(report) {
-  if (report.status === "submitted") {
-    return { className: "is-submitted", label: "Submitted" };
-  }
-
-  if (report.status === "failed") {
-    return { className: "is-failed", label: "Saved locally" };
-  }
-
-  return { className: "is-local", label: "Local" };
 }
 
 function escapeHtml(value) {
@@ -306,7 +251,6 @@ function getPreviewOptionsState() {
       bandwidthSavedBytesEstimate: 0,
       startedAt: Date.now()
     },
-    reports: [],
     userCosmeticRules: [],
     cosmeticPackaged: {
       global: [],
