@@ -49,19 +49,25 @@ type ExistingGitHubIssue = {
 
 const DEFAULT_REPO = "open-adblock/open-adblock";
 const DEFAULT_UPLOAD_BRANCH = "report-screenshots";
-const REQUIRED_LABELS = ["filter:breakage"];
-const DEFAULT_LABELS = ["filter:breakage", "extension-report", "needs-triage"];
+const DEFAULT_LABELS = ["extension-report", "needs-triage"];
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_DETAILS_LENGTH = 2000;
 const MAX_URL_LENGTH = 2000;
 const MAX_DIAGNOSTICS_BYTES = 6000;
 const MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024;
 
-const CATEGORY_LABELS: Record<ReportCategory, string> = {
+const CATEGORY_DISPLAY_NAMES: Record<ReportCategory, string> = {
   breakage: "Page broken",
   missed_ad: "Missed ad",
   false_positive: "Site incorrectly blocked",
   other: "Other"
+};
+
+const CATEGORY_ISSUE_LABELS: Record<ReportCategory, string> = {
+  breakage: "issue:breakage",
+  missed_ad: "issue:missed-ad",
+  false_positive: "issue:false-positive",
+  other: "issue:other"
 };
 
 export class ReportError extends Error {
@@ -146,7 +152,7 @@ export async function createGitHubIssue(
 
   if (existingIssue) {
     await addGitHubIssueComment(repo, tokenHeaders, existingIssue.number, reportWithScreenshot, fetcher);
-    await addGitHubIssueLabels(repo, tokenHeaders, existingIssue.number, parseLabels(env.GITHUB_LABELS), fetcher);
+    await addGitHubIssueLabels(repo, tokenHeaders, existingIssue.number, buildIssueLabels(report, env.GITHUB_LABELS), fetcher);
     let reopened = false;
 
     if (existingIssue.state === "closed") {
@@ -170,7 +176,7 @@ export async function createGitHubIssue(
     body: JSON.stringify({
       title,
       body: buildIssueBody(reportWithScreenshot),
-      labels: parseLabels(env.GITHUB_LABELS)
+      labels: buildIssueLabels(report, env.GITHUB_LABELS)
     })
   });
 
@@ -214,13 +220,13 @@ export function getAllowedCorsOrigin(origin: string, allowedOrigins = ""): strin
 }
 
 export function buildIssueTitle(report: NormalizedReport): string {
-  return truncate(`Breakage: \`${getReportDomain(report)}\``, 120);
+  return truncate(`issue: ${getReportDomain(report)}`, 120);
 }
 
 export function buildIssueBody(report: NormalizedReport): string {
   const lines = [
     "## Report",
-    `- Category: ${CATEGORY_LABELS[report.category]}`,
+    `- Category: ${CATEGORY_DISPLAY_NAMES[report.category]}`,
     `- Hostname: ${report.hostname}`,
     `- URL: ${report.url || "Not included"}`,
     `- Extension version: ${report.extensionVersion}`,
@@ -247,6 +253,11 @@ export function buildIssueBody(report: NormalizedReport): string {
 
 export function buildIssueCommentBody(report: NormalizedReport): string {
   return ["## Additional report", buildIssueBody(report)].join("\n\n");
+}
+
+export function buildIssueLabels(report: NormalizedReport, configuredLabels = ""): string[] {
+  const labels = parseLabels(configuredLabels);
+  return [...new Set([CATEGORY_ISSUE_LABELS[report.category], ...labels])].slice(0, 10);
 }
 
 async function findExistingIssue(
@@ -600,8 +611,7 @@ function parseLabels(value = ""): string[] {
     .split(",")
     .map((label) => sanitizeText(label, 50))
     .filter(Boolean);
-  const labels = configuredLabels.length > 0 ? configuredLabels : DEFAULT_LABELS;
-  return [...new Set([...REQUIRED_LABELS, ...labels])].slice(0, 10);
+  return configuredLabels.length > 0 ? configuredLabels : DEFAULT_LABELS;
 }
 
 function normalizeDiagnostics(value: unknown): Record<string, unknown> {

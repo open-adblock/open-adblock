@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildIssueBody,
   buildIssueCommentBody,
+  buildIssueLabels,
   buildIssueTitle,
   createGitHubIssue,
   getAllowedCorsOrigin,
@@ -102,8 +103,8 @@ describe("createGitHubIssue", () => {
     expect(calls[0].url).toContain("https://api.github.com/search/issues?");
     expect(calls[1].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues");
     expect(await calls[1].json()).toMatchObject({
-      title: "Breakage: `shop.example`",
-      labels: ["filter:breakage", "extension-report", "needs-triage"]
+      title: "issue: shop.example",
+      labels: ["issue:false-positive", "extension-report", "needs-triage"]
     });
   });
 
@@ -268,7 +269,7 @@ describe("createGitHubIssue", () => {
           items: [
             {
               number: 17,
-              title: "Breakage: `video.example`",
+              title: "issue: video.example",
               html_url: "https://github.com/open-adblock/open-adblock/issues/17",
               state: "open"
             }
@@ -288,7 +289,7 @@ describe("createGitHubIssue", () => {
     });
     expect(calls[2].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/17/labels");
     expect(await calls[2].json()).toEqual({
-      labels: ["filter:breakage", "extension-report", "needs-triage"]
+      labels: ["issue:breakage", "extension-report", "needs-triage"]
     });
   });
 
@@ -306,7 +307,7 @@ describe("createGitHubIssue", () => {
           items: [
             {
               number: 28,
-              title: "Breakage: `news.example`",
+              title: "issue: news.example",
               html_url: "https://github.com/open-adblock/open-adblock/issues/28",
               state: "closed"
             }
@@ -336,7 +337,7 @@ describe("GitHub issue formatting", () => {
       diagnostics: { pageBlocked: 9 }
     });
 
-    expect(buildIssueTitle(report)).toBe("Breakage: `video.example`");
+    expect(buildIssueTitle(report)).toBe("issue: video.example");
     expect(buildIssueBody(report)).toContain("Video controls disappear");
     expect(buildIssueBody(report)).toContain('"pageBlocked": 9');
     expect(buildIssueCommentBody(report)).toContain("## Additional report");
@@ -348,7 +349,25 @@ describe("GitHub issue formatting", () => {
       page: { url: "https://www.example.com/", hostname: "www.example.com" }
     });
 
-    expect(buildIssueTitle(report)).toBe("Breakage: `example.com`");
+    expect(buildIssueTitle(report)).toBe("issue: example.com");
+  });
+
+  it("adds the reported issue type as a GitHub label", () => {
+    const categories = [
+      ["breakage", "issue:breakage"],
+      ["missed_ad", "issue:missed-ad"],
+      ["false_positive", "issue:false-positive"],
+      ["other", "issue:other"]
+    ] as const;
+
+    for (const [category, label] of categories) {
+      const report = normalizeReportPayload({
+        category,
+        page: { url: "https://example.com/", hostname: "example.com" }
+      });
+
+      expect(buildIssueLabels(report)).toEqual([label, "extension-report", "needs-triage"]);
+    }
   });
 });
 

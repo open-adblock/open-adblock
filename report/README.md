@@ -5,10 +5,10 @@ Cloudflare Worker endpoint for extension reports. Reports are validated and forw
 Issues are grouped by hostname with titles like:
 
 ```text
-Breakage: `domain.com`
+issue: domain.com
 ```
 
-When an issue with the same title already exists, the report is appended as a new comment. If that issue is closed, the Worker reopens it after adding the comment.
+When an issue with the same title already exists, the report is appended as a new comment. If that issue is closed, the Worker reopens it after adding the comment. Reports also get an issue type label: `issue:breakage`, `issue:missed-ad`, `issue:false-positive`, or `issue:other`.
 
 If a report includes a screenshot, the Worker uploads it to the configured GitHub repository through the Contents API and embeds the raw GitHub URL in the issue or comment.
 
@@ -31,6 +31,6 @@ npm run deploy
 Optional environment variables:
 
 - `GITHUB_REPO`: defaults to `open-adblock/open-adblock`
-- `GITHUB_LABELS`: comma-separated issue labels; `filter:breakage` is always included
+- `GITHUB_LABELS`: comma-separated base issue labels; the reported issue type label is always included
 - `GITHUB_UPLOAD_BRANCH`: branch used for screenshot files, defaults to `report-screenshots`; the Worker recreates it from the repository default branch if it is missing
 - `ALLOWED_ORIGINS`: comma-separated CORS origins, wildcard suffixes supported
