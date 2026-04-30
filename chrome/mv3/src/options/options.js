@@ -2,9 +2,6 @@ const version = document.getElementById("version");
 const navItems = [...document.querySelectorAll(".nav-item")];
 const views = [...document.querySelectorAll(".view")];
 const themeControl = document.getElementById("themeControl");
-const remoteUpdates = document.getElementById("remoteUpdates");
-const remoteManifestUrl = document.getElementById("remoteManifestUrl");
-const reportEndpointUrl = document.getElementById("reportEndpointUrl");
 const runUpdate = document.getElementById("runUpdate");
 const remoteVersion = document.getElementById("remoteVersion");
 const remoteUpdatedAt = document.getElementById("remoteUpdatedAt");
@@ -26,18 +23,6 @@ themeControl.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-theme-value]");
   if (!button) return;
   await saveSettings({ theme: button.dataset.themeValue });
-});
-
-remoteUpdates.addEventListener("change", async () => {
-  await saveSettings({ remoteUpdates: remoteUpdates.checked });
-});
-
-remoteManifestUrl.addEventListener("change", async () => {
-  await saveSettings({ remoteManifestUrl: remoteManifestUrl.value });
-});
-
-reportEndpointUrl.addEventListener("change", async () => {
-  await saveSettings({ reportEndpointUrl: reportEndpointUrl.value });
 });
 
 runUpdate.addEventListener("click", async () => {
@@ -100,10 +85,6 @@ function render() {
   for (const button of themeControl.querySelectorAll("button")) {
     button.classList.toggle("is-active", button.dataset.themeValue === (settings.theme || "system"));
   }
-
-  remoteUpdates.checked = Boolean(settings.remoteUpdates);
-  remoteManifestUrl.value = settings.remoteManifestUrl || "";
-  reportEndpointUrl.value = settings.reportEndpointUrl || filters.reportEndpointUrl || "";
 
   remoteVersion.textContent = filters.remoteVersion || "None";
   remoteUpdatedAt.textContent = filters.remoteUpdatedAt ? formatDate(filters.remoteUpdatedAt) : "Never";
@@ -239,10 +220,7 @@ function getRuntime() {
 function getPreviewOptionsState() {
   return {
     settings: {
-      theme: "system",
-      remoteUpdates: true,
-      remoteManifestUrl: "https://cdn.jsdelivr.net/gh/open-adblock/open-adblock@main/filters/manifest.json",
-      reportEndpointUrl: "https://report.open-adblock.com/api/reports"
+      theme: "system"
     },
     siteState: {},
     stats: {
@@ -273,7 +251,6 @@ function getPreviewOptionsState() {
       remoteVersion: null,
       remoteUpdatedAt: null,
       remoteLastError: null,
-      reportEndpointUrl: "https://report.open-adblock.com/api/reports",
       sourceSummary: []
     }
   };

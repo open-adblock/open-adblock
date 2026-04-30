@@ -23,10 +23,7 @@ const LEGACY_STORAGE_KEYS = ["reports"];
 
 const STORAGE_DEFAULTS = {
   settings: {
-    theme: "system",
-    remoteUpdates: true,
-    remoteManifestUrl: DEFAULT_REMOTE_MANIFEST_URL,
-    reportEndpointUrl: DEFAULT_REPORT_ENDPOINT_URL
+    theme: "system"
   },
   siteState: {},
   stats: {
@@ -61,7 +58,6 @@ const STORAGE_DEFAULTS = {
     remoteVersion: null,
     remoteUpdatedAt: null,
     remoteLastError: null,
-    reportEndpointUrl: DEFAULT_REPORT_ENDPOINT_URL,
     sourceSummary: []
   }
 };
@@ -109,6 +105,7 @@ function ensureInitialized() {
 
 async function initializeExtension() {
   await ensureStorageDefaults();
+  await removeLegacySettingsConfig();
   await removeLegacyStorageKeys();
   await loadPackagedCosmeticIndex();
   await configureActionCountBadge();
@@ -131,6 +128,30 @@ async function ensureStorageDefaults() {
 
   if (Object.keys(next).length > 0) {
     await chrome.storage.local.set(next);
+  }
+}
+
+async function removeLegacySettingsConfig() {
+  const { settings, filters } = await chrome.storage.local.get(["settings", "filters"]);
+  const updates = {};
+
+  if (settings) {
+    const nextSettings = { ...settings };
+    delete nextSettings.remoteUpdates;
+    delete nextSettings.remoteManifestUrl;
+    delete nextSettings.reportEndpointUrl;
+    if (Object.keys(nextSettings).length !== Object.keys(settings).length) {
+      updates.settings = nextSettings;
+    }
+  }
+
+  if (filters && Object.prototype.hasOwnProperty.call(filters, "reportEndpointUrl")) {
+    const { reportEndpointUrl: _reportEndpointUrl, ...nextFilters } = filters;
+    updates.filters = nextFilters;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await chrome.storage.local.set(updates);
   }
 }
 
@@ -208,7 +229,7 @@ async function handleMessage(message, sender) {
     case "REMOVE_USER_COSMETIC_RULE":
       return removeUserCosmeticRule(message.id);
     case "RUN_REMOTE_UPDATE":
-      return updateRemoteFilters({ force: true });
+      return updateRemoteFilters();
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -411,15 +432,13 @@ async function reportBreakage(message) {
     throw new Error("A valid page is required");
   }
 
-  const storage = await chrome.storage.local.get(["settings", "filters", "siteState", "pageStats"]);
+  const storage = await chrome.storage.local.get(["filters", "siteState", "pageStats"]);
   const manifest = chrome.runtime.getManifest();
   const category = normalizeReportCategory(message.category);
   const details = String(message.details || message.reason || "").slice(0, 2000);
   const includeUrl = message.includeUrl !== false;
   const includeScreenshot = message.includeScreenshot !== false;
-  const endpointUrl = normalizeReportEndpointUrl(
-    storage.settings?.reportEndpointUrl || storage.filters?.reportEndpointUrl
-  );
+  const endpointUrl = DEFAULT_REPORT_ENDPOINT_URL;
   const screenshot = includeScreenshot ? await captureReportScreenshot(tab?.windowId) : null;
   const reportId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pageStats = tab?.id ? storage.pageStats?.[String(tab.id)] || null : null;
@@ -483,16 +502,15 @@ async function saveSettings(partialSettings) {
   const { settings = STORAGE_DEFAULTS.settings } = await chrome.storage.local.get("settings");
   const nextSettings = {
     ...settings,
-    ...pick(partialSettings, ["theme", "remoteUpdates", "remoteManifestUrl", "reportEndpointUrl"])
+    ...pick(partialSettings, ["theme"])
   };
+  delete nextSettings.remoteUpdates;
+  delete nextSettings.remoteManifestUrl;
+  delete nextSettings.reportEndpointUrl;
 
   if (!["system", "light", "dark"].includes(nextSettings.theme)) {
     nextSettings.theme = "system";
   }
-
-  nextSettings.remoteUpdates = Boolean(nextSettings.remoteUpdates);
-  nextSettings.remoteManifestUrl = normalizeRemoteManifestUrl(nextSettings.remoteManifestUrl);
-  nextSettings.reportEndpointUrl = normalizeReportEndpointUrl(nextSettings.reportEndpointUrl);
 
   await chrome.storage.local.set({ settings: nextSettings });
   return { settings: nextSettings };
@@ -555,14 +573,8 @@ async function captureReportScreenshot(windowId) {
   }
 }
 
-async function updateRemoteFilters({ force = false } = {}) {
-  const { settings = STORAGE_DEFAULTS.settings } = await chrome.storage.local.get("settings");
-
-  if (!force && !settings.remoteUpdates) {
-    return { skipped: true, reason: "Remote updates are disabled" };
-  }
-
-  const manifestUrl = normalizeRemoteManifestUrl(settings.remoteManifestUrl);
+async function updateRemoteFilters() {
+  const manifestUrl = DEFAULT_REMOTE_MANIFEST_URL;
   const manifest = await fetchJson(manifestUrl);
   validateRemoteManifest(manifest);
 
@@ -618,7 +630,6 @@ async function updateRemoteFilters({ force = false } = {}) {
     remoteVersion: String(manifest.version || ""),
     remoteUpdatedAt: Date.now(),
     remoteLastError: null,
-    reportEndpointUrl: normalizeReportEndpointUrl(manifest.reportEndpointUrl),
     sourceSummary
   };
 
@@ -677,10 +688,6 @@ function validateRemoteManifest(manifest) {
     throw new Error("Remote filter manifest must include files");
   }
 
-  if (manifest.reportEndpointUrl !== undefined && typeof manifest.reportEndpointUrl !== "string") {
-    throw new Error("Remote filter manifest reportEndpointUrl must be a string");
-  }
-
   for (const file of manifest.files) {
     if (!file || typeof file.url !== "string" || typeof file.type !== "string") {
       throw new Error("Remote filter file entries require url and type");
@@ -696,32 +703,6 @@ async function sha256(text) {
   const data = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest("SHA-256", data);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function normalizeRemoteManifestUrl(url) {
-  try {
-    const parsed = new URL(url || DEFAULT_REMOTE_MANIFEST_URL);
-    if (parsed.protocol !== "https:") {
-      return DEFAULT_REMOTE_MANIFEST_URL;
-    }
-    return parsed.toString();
-  } catch {
-    return DEFAULT_REMOTE_MANIFEST_URL;
-  }
-}
-
-function normalizeReportEndpointUrl(url) {
-  try {
-    const parsed = new URL(url || DEFAULT_REPORT_ENDPOINT_URL);
-    const isLocalHttp =
-      parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
-    if (parsed.protocol !== "https:" && !isLocalHttp) {
-      return DEFAULT_REPORT_ENDPOINT_URL;
-    }
-    return parsed.toString();
-  } catch {
-    return DEFAULT_REPORT_ENDPOINT_URL;
-  }
 }
 
 function normalizeReportCategory(value) {
