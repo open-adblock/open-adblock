@@ -570,6 +570,10 @@ textarea {
 
 .toast {
   position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   right: 12px;
   bottom: 54px;
   left: 12px;
@@ -580,4 +584,29 @@ textarea {
   box-shadow: var(--shadow-sm);
   color: var(--fg-muted);
   font-size: 12px;
+  line-height: 1.35;
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+.toast-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast-action {
+  flex: 0 0 auto;
+  color: var(--fg);
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.toast-action:hover {
+  color: var(--accent);
 }

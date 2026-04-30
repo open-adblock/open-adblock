@@ -30,6 +30,7 @@ const reportSubmitButton = document.getElementById("reportSubmitButton");
 const toast = document.getElementById("toast");
 
 let state = null;
+let toastTimer = null;
 
 settingsButton.addEventListener("click", () => {
   sendMessage("OPEN_OPTIONS").catch((error) => showToast(error.message));
@@ -91,7 +92,7 @@ reportForm.addEventListener("submit", async (event) => {
     });
     render(state);
     closeReportDialog();
-    showToast(formatReportToast(report));
+    showReportToast(report);
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -172,14 +173,6 @@ function closeReportDialog() {
   }
 }
 
-function formatReportToast(report) {
-  if (report?.status === "submitted" && report.issueNumber) {
-    return `Reported to GitHub #${report.issueNumber}`;
-  }
-
-  return "Report submitted";
-}
-
 function resolveTheme(theme) {
   if (theme === "dark" || theme === "light") return theme;
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -240,12 +233,61 @@ function formatShortDate(timestamp) {
   }).format(new Date(timestamp));
 }
 
-function showToast(message) {
-  toast.textContent = message;
+function showReportToast(report) {
+  if (report?.status === "submitted" && report.issueUrl) {
+    showToast("Report sent", {
+      actionLabel: report.issueNumber ? `View #${report.issueNumber}` : "View details",
+      actionUrl: report.issueUrl,
+      duration: 5000
+    });
+    return;
+  }
+
+  if (report?.status === "submitted" && report.issueNumber) {
+    showToast(`Report sent to GitHub #${report.issueNumber}`);
+    return;
+  }
+
+  showToast("Report sent");
+}
+
+function showToast(message, { actionLabel = "", actionUrl = "", duration = 2200 } = {}) {
+  clearTimeout(toastTimer);
+  toast.replaceChildren();
+
+  const messageNode = document.createElement("span");
+  messageNode.className = "toast-message";
+  messageNode.textContent = message;
+  toast.append(messageNode);
+
+  if (actionUrl && actionLabel) {
+    const link = document.createElement("a");
+    link.className = "toast-action";
+    link.href = actionUrl;
+    link.textContent = actionLabel;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      openUrl(actionUrl);
+    });
+    toast.append(link);
+  }
+
   toast.hidden = false;
-  setTimeout(() => {
+  toastTimer = setTimeout(() => {
     toast.hidden = true;
-  }, 2200);
+  }, duration);
+}
+
+function openUrl(url) {
+  if (globalThis.chrome?.tabs?.create) {
+    globalThis.chrome.tabs.create({ url });
+    window.close();
+    return;
+  }
+
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function sendMessage(type, payload = {}) {
