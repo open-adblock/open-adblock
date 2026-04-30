@@ -10,7 +10,7 @@ OpenAdBlock is built first for Manifest V3. The initial implementation lives und
 
 - Brand: `OpenAdBlock`
 - UI copy: English only
-- Extension code license: MIT
+- Extension code license: GPL-3.0-only
 - Target stores: Chrome Web Store first, then other Chromium-based stores
 - Statistics and user-created rules: local-only, stored in `chrome.storage.local`
 - Default filters: uBO filter-based network/cosmetic filtering plus an OpenAdBlock curated allowlist
@@ -221,7 +221,7 @@ Unsupported filters must be reported into `filters/browser/generated/unsupported
 
 ## Licensing Boundary
 
-The extension source code can be MIT. uBO filter assets and related third-party lists must be treated as third-party data with their own licenses and attribution.
+The extension source code is GPL-3.0-only. uBO filter assets and related third-party lists must be treated as third-party data with their own licenses and attribution.
 
 Implementation requirements:
 

@@ -9,14 +9,14 @@
       "type": "allowlist-network",
       "name": "OpenAdBlock browser network allowlist",
       "url": "browser/allowlist/network.txt",
-      "license": "MIT",
+      "license": "GPL-3.0-only",
       "revision": "2026-04-28"
     },
     {
       "type": "allowlist-cosmetic",
       "name": "OpenAdBlock browser cosmetic allowlist",
       "url": "browser/allowlist/cosmetic.txt",
-      "license": "MIT",
+      "license": "GPL-3.0-only",
       "revision": "2026-04-28"
     }
   ]

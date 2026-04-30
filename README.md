@@ -41,6 +41,6 @@ https://cdn.jsdelivr.net/gh/open-adblock/open-adblock@main/filters/manifest.json
 
 ## Licensing
 
-OpenAdBlock source code and first-party filter data are licensed under the MIT
-License. Third-party filter sources keep their own licenses and attribution in
-the relevant notice files.
+OpenAdBlock source code and first-party filter data are licensed under the
+GNU General Public License version 3. Third-party filter sources keep their own
+licenses and attribution in the relevant notice files.
