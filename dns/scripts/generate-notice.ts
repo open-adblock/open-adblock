@@ -1,33 +1,21 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write
 /**
- * Render `NOTICE.template` from the same directory as a preset `.urls` file by
- * substituting upstream sources (comments after `#` become the license annotation).
+ * Render `NOTICE.template` from the same directory as `ruleset.json` by
+ * substituting the selected preset's upstream source metadata.
  *
  * Usage:
- *   deno run --allow-read scripts/generate-notice.ts <preset> <urls-file> > NOTICE.txt
+ *   deno run --allow-read scripts/generate-notice.ts <preset> <ruleset.json> > NOTICE.txt
  */
 
-interface ParsedUrl {
-  url: string;
-  annotation: string;
-}
+import { readDnsRuleset } from "./fetch-upstream.ts";
+import type { DnsRulesetSource } from "./fetch-upstream.ts";
 
-async function readUrlsWithAnnotations(path: string): Promise<ParsedUrl[]> {
-  const text = await Deno.readTextFile(path);
-  const out: ParsedUrl[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    const hash = line.indexOf("#");
-    const url = hash >= 0 ? line.slice(0, hash).trim() : line.trim();
-    const annotation = hash >= 0 ? line.slice(hash + 1).trim() : "";
-    if (url) out.push({ url, annotation });
-  }
-  return out;
-}
-
-function renderSources(sources: ParsedUrl[]): string {
+function renderSources(sources: DnsRulesetSource[]): string {
   return sources
-    .map((s) => `  - ${s.url}${s.annotation ? `    ${s.annotation}` : ""}`)
+    .map((s) => {
+      const annotation = [s.name, s.license].filter(Boolean).join(" ");
+      return `  - ${s.url}${annotation ? `    ${annotation}` : ""}`;
+    })
     .join("\n");
 }
 
@@ -47,15 +35,20 @@ function childPath(dir: string, child: string): string {
 
 async function main(args: string[]) {
   if (args.length < 2) {
-    console.error("usage: generate-notice.ts <preset> <urls-file>");
+    console.error("usage: generate-notice.ts <preset> <ruleset.json>");
     Deno.exit(2);
   }
-  const [preset, urlsFile] = args;
-  const template = await Deno.readTextFile(childPath(parentDir(urlsFile), "NOTICE.template"));
-  const sources = await readUrlsWithAnnotations(urlsFile);
+  const [presetId, rulesetFile] = args;
+  const template = await Deno.readTextFile(childPath(parentDir(rulesetFile), "NOTICE.template"));
+  const ruleset = await readDnsRuleset(rulesetFile);
+  const preset = ruleset.presets.find((entry) => entry.id === presetId);
+  if (!preset) {
+    console.error(`unknown DNS ruleset preset: ${presetId}`);
+    Deno.exit(2);
+  }
   const rendered = template
-    .replaceAll("{preset}", preset)
-    .replaceAll("{sources}", renderSources(sources))
+    .replaceAll("{preset}", preset.id)
+    .replaceAll("{sources}", renderSources(preset.urls))
     .replaceAll("{timestamp}", new Date().toISOString());
   console.log(rendered);
 }

@@ -129,49 +129,40 @@ Next settings after MVP:
 OpenAdBlock should not interpret remotely downloaded logic at runtime. The extension can support remote filter updates only as data updates. All parsing, validation, compilation, and application logic must be bundled inside the extension package.
 
 ```text
-uBO filter sources + OpenAdBlock allowlist
-  -> fetch and pin metadata
+filters/browser/ruleset.json
+  -> select enabled rulesets
+  -> fetch ruleset URLs
   -> normalize
-  -> compile supported network filters to DNR JSON
-  -> compile supported cosmetic filters to CSS/content-script data
-  -> emit unsupported filter report
-  -> validate against Chrome DNR limits
-  -> package into mv3 build
+  -> compile supported network filters to dynamic DNR JSON
+  -> compile supported cosmetic filters to chrome.storage.local selector data
+  -> count unsupported filters
+  -> validate against Chrome DNR limits before applying
 ```
 
-The packaged build should include a baseline static ruleset so the extension works immediately after install and remains useful if remote updates fail.
+The packaged build includes only the ruleset catalog. Network and cosmetic filters are applied from selected rulesets.
 
 ## Remote Filter Updates
 
 Remote updates are allowed for filter data, with strict boundaries:
 
-- Allowed: downloading signed or checksummed filter data, metadata, allowlist entries, and supported cosmetic selector data.
+- Allowed: downloading selected ruleset filter data and supported cosmetic selector data.
 - Not allowed: downloading JavaScript, WebAssembly, scriptlets, procedural logic, or any text that the extension executes as code.
-- Static rulesets are package assets and cannot be replaced remotely. Remote network updates must be compiled into dynamic DNR rules.
+- Ruleset network updates must be compiled into dynamic DNR rules.
 - Remote CSS filtering updates must be treated as selector data consumed by packaged content-script logic, not as executable remote code.
-- Remote filter updates must be optional and failure-tolerant. The packaged static ruleset remains the fallback.
+- Remote filter updates must be optional and failure-tolerant.
 
 The monorepo `filters/` package should publish:
 
 ```text
-manifest.json
-network/
-  ubo-compatible.txt
-allowlist/
-  network.txt
-  cosmetic.txt
-cosmetic/
-  selectors.txt
-metadata/
-  attribution.json
-  checksums.json
+browser/
+  ruleset.json
 ```
 
 Suggested remote update flow:
 
 1. `alarms` wakes the service worker on a conservative interval.
-2. The service worker fetches the remote manifest from the OpenAdBlock filters endpoint.
-3. The updater checks schema version, extension compatibility, hashes, and source metadata.
+2. The service worker reads the packaged ruleset catalog.
+3. The updater fetches enabled ruleset URLs.
 4. Network filters are compiled into safe dynamic DNR rules.
 5. Cosmetic filters are compiled into a local selector index in `chrome.storage.local`.
 6. Unsupported rules are discarded and counted.
@@ -179,20 +170,17 @@ Suggested remote update flow:
 
 Remote DNR updates must respect Chrome dynamic rule quotas. If the remote rules exceed quota, priority order is:
 
-1. OpenAdBlock allowlist and user pause rules
+1. User pause rules
 2. High-confidence network block rules
 3. Lower-confidence or broad cosmetic/network rules
 
-For MVP, remote updates should use only OpenAdBlock-controlled endpoints. Third-party filter URLs can be fetched by the filter build pipeline, then republished through `open-adblock/open-adblock` with attribution.
+For MVP, filter selection is driven by the packaged ruleset catalog.
 
 ### Rule Strategy
 
-- Static rulesets:
-  - `ruleset-main`: uBO-based block rules
-  - `ruleset-allowlist`: OpenAdBlock allow/allowAllRequests rules with higher priority
 - Dynamic rules:
   - User/site-specific pause rules
-  - Remote network filter updates
+  - Ruleset network filter updates
   - User block/allow entries
 - Session rules:
   - Reserved for temporary workflows such as element picker preview
@@ -208,29 +196,27 @@ Supported:
 - Network allow filters that translate cleanly to DNR
 - Basic cosmetic hiding selectors that can be applied by content scripts
 - User-created block-element selectors
-- Remote data updates for supported network and cosmetic rules
+- Ruleset data updates for supported network and cosmetic rules
 
 Deferred:
 
-- Full uBO scriptlet support
+- Full scriptlet support
 - Complex procedural cosmetic filters
 - Advanced dynamic filtering modes
 - Per-request debug logs in production
 
-Unsupported filters must be reported into `filters/browser/generated/unsupported.json` during build, with counts by reason.
+Unsupported filters are counted when selected rulesets are compiled.
 
 ## Licensing Boundary
 
-The extension source code is GPL-3.0-only. uBO filter assets and related third-party lists must be treated as third-party data with their own licenses and attribution.
+The extension source code is GPL-3.0-only. Ruleset catalog metadata and third-party lists must be treated as third-party data with their own licenses and attribution.
 
 Implementation requirements:
 
-- Keep filter source metadata in `filters/browser/sources/ubo.json`
-- Generate `filters/browser/generated/attribution.json`
+- Keep the ruleset catalog in `filters/browser/ruleset.json`
 - Include third-party notices in the packaged extension
-- Include third-party notices for remote filter snapshots
-- Do not imply uBO endorsement
-- Make it clear that OpenAdBlock is uBO filter-based, not a uBlock Origin fork
+- Do not imply uBlock Origin endorsement
+- Make it clear that OpenAdBlock is not a uBlock Origin fork
 
 If filter assets are bundled into the extension package, release artifacts must preserve required notices. Runtime filter updates must also preserve attribution metadata and remain data-only.
 

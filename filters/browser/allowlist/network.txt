@@ -1,2 +1,0 @@
-! OpenAdBlock network allowlist
-! Shared source of truth: open-adblock/open-adblock/filters/browser/allowlist/network.txt

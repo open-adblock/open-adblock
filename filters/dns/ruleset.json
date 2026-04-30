@@ -1,0 +1,29 @@
+{
+  "version": "dns-ruleset-2026-04-30",
+  "presets": [
+    {
+      "id": "light",
+      "name": "Light",
+      "description": "FP-free everyday blocking for dns.open-adblock.com.",
+      "urls": [
+        {
+          "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/light.txt",
+          "name": "Hagezi Light",
+          "license": "GPLv3"
+        }
+      ]
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "description": "Aggressive blocking, phishing, and error-tracker protection for pro.dns.open-adblock.com.",
+      "urls": [
+        {
+          "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/pro.txt",
+          "name": "Hagezi Pro",
+          "license": "GPLv3"
+        }
+      ]
+    }
+  ]
+}

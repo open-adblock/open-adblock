@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,9 +8,9 @@ const filtersRoot = resolve(
 );
 const linkPath = resolve(root, "filters");
 
-if (!existsSync(resolve(filtersRoot, "generated/cosmetic-index.json"))) {
+if (!existsSync(resolve(filtersRoot, "ruleset.json"))) {
   console.error(
-    `Missing browser filters at ${filtersRoot}. Run from the monorepo checkout or set OPEN_ADBLOCK_BROWSER_FILTERS_DIR.`
+    `Missing browser ruleset catalog at ${filtersRoot}. Run from the monorepo checkout or set OPEN_ADBLOCK_BROWSER_FILTERS_DIR.`
   );
   process.exit(1);
 }
@@ -25,15 +25,17 @@ if (existsSync(linkPath)) {
 }
 
 cpSync(filtersRoot, linkPath, { recursive: true, dereference: true });
-writeCosmeticIndexModule();
+writeRulesetModule();
 console.log(`filters copied from ${relative(root, filtersRoot)}`);
 
-function writeCosmeticIndexModule() {
-  const jsonPath = resolve(linkPath, "generated/cosmetic-index.json");
-  const modulePath = resolve(linkPath, "generated/cosmetic-index.js");
-  const cosmeticIndex = JSON.parse(readFileSync(jsonPath, "utf8"));
+function writeRulesetModule() {
+  const jsonPath = resolve(linkPath, "ruleset.json");
+  const generatedDir = resolve(linkPath, "generated");
+  const modulePath = resolve(generatedDir, "ruleset.js");
+  const rulesets = JSON.parse(readFileSync(jsonPath, "utf8"));
+  mkdirSync(generatedDir, { recursive: true });
   writeFileSync(
     modulePath,
-    `const cosmeticIndex = ${JSON.stringify(cosmeticIndex, null, 2)};\n\nexport default cosmeticIndex;\n`
+    `const rulesets = ${JSON.stringify(rulesets, null, 2)};\n\nexport default rulesets;\n`
   );
 }

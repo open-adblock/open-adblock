@@ -95,9 +95,9 @@ Two hosts, one Rust engine:
   [udp/fly.pro.toml](udp/fly.pro.toml), [udp/Dockerfile](udp/Dockerfile)).
   Same engine, same blobs, native build.
 
-The filter blobs in both paths are built from the DNS filter data in
-[filters/dns](../filters/dns) via [scripts/build-all.sh](scripts/build-all.sh).
-CI rebuilds the blobs on every deploy.
+The filter blobs in both paths are built from [filters/dns/ruleset.json](../filters/dns/ruleset.json)
+via [scripts/build-all.sh](scripts/build-all.sh). CI fetches the selected
+ruleset presets and rebuilds the blobs on every deploy.
 
 Deploy commands (maintainers):
 

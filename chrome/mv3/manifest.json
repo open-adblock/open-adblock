@@ -27,6 +27,7 @@
     "alarms",
     "activeTab",
     "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
     "scripting",
     "storage",
     "tabs"
@@ -34,20 +35,6 @@
   "host_permissions": [
     "<all_urls>"
   ],
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "openadblock_static_main",
-        "enabled": true,
-        "path": "src/rules/static-rules.json"
-      },
-      {
-        "id": "openadblock_static_allowlist",
-        "enabled": true,
-        "path": "src/rules/allowlist-rules.json"
-      }
-    ]
-  },
   "content_scripts": [
     {
       "matches": [

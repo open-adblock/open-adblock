@@ -3,7 +3,7 @@
   window.__openAdblockCosmeticLoaded = true;
 
   const STYLE_ID = "openadblock-cosmetic-style";
-  const STORAGE_KEYS = ["siteState", "userCosmeticRules", "cosmeticPackaged", "cosmeticRemote"];
+  const STORAGE_KEYS = ["siteState", "userCosmeticRules", "cosmeticRemote"];
   let applyTimer = null;
   let lastReportedActivityKey = "";
 
@@ -40,20 +40,17 @@
 
     const selectors = [];
     const exceptions = new Set();
-    const packaged = storage.cosmeticPackaged || {};
     const remote = storage.cosmeticRemote || {};
 
-    collectRemoteSelectors(packaged, hostname, selectors, exceptions);
     collectRemoteSelectors(remote, hostname, selectors, exceptions);
     collectUserSelectors(storage.userCosmeticRules || [], hostname, selectors);
 
     const validSelectors = [...new Set(selectors)]
       .filter((selector) => selector && !exceptions.has(selector))
       .filter(isSelectorUsable);
-    const cosmeticBlocked = countMatchingElements(validSelectors);
-    reportPageActivity(hostname, cosmeticBlocked);
 
     if (validSelectors.length === 0) {
+      reportPageActivity(hostname, 0);
       removeStyle();
       return;
     }
@@ -63,6 +60,9 @@
       .join("\n");
 
     upsertStyle(css);
+    setTimeout(() => {
+      reportPageActivity(hostname, countMatchingElements(validSelectors));
+    }, 50);
   }
 
   function collectRemoteSelectors(remote, hostname, selectors, exceptions) {
@@ -119,12 +119,15 @@
   }
 
   function isSelectorUsable(selector) {
-    try {
-      document.querySelector(selector);
-      return !selector.includes("[data-openadblock-picker-ui]");
-    } catch {
-      return false;
-    }
+    const lowered = selector.toLowerCase();
+    return (
+      !selector.includes("[data-openadblock-picker-ui]") &&
+      !selector.includes("{") &&
+      !selector.includes("}") &&
+      !lowered.includes("+js(") &&
+      !lowered.includes(":upward(") &&
+      !lowered.includes(":-abp-")
+    );
   }
 
   function countMatchingElements(selectors) {

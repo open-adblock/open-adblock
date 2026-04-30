@@ -1,9 +1,8 @@
 //! Phase 1.7 — `engine-compile` CLI integration test.
 //!
 //! Given a directory layout:
-//! - `urls-file` (list of upstream URLs, one per line, comments with `#`)
-//! - `fetched-dir` (cached upstream content, filename = sha1 of URL or similar)
-//! - `custom-dir` (block.txt, allow.txt, wildcards.txt, regex.txt)
+//! - `ruleset.json` (DNS presets and upstream URLs)
+//! - `fetched-dir` (cached upstream content, filename = engine URL cache name)
 //!
 //! The CLI must emit a `filters.bin` that round-trips to an Engine producing the
 //! expected verdicts.
@@ -13,37 +12,43 @@ use engine::{Engine, Verdict};
 use std::fs;
 use tempfile::TempDir;
 
-fn sha1_hex(s: &str) -> String {
-    // Small vendored SHA1 only for tests would be nicer, but we just need any
-    // stable filename derivation the CLI uses. The CLI reads back the same
-    // mapping, so we expose a helper that matches it.
+fn cache_name(s: &str) -> String {
     engine::compile::url_cache_filename(s)
 }
 
 #[test]
-fn cli_compiles_custom_rules_into_engine_blob() {
+fn cli_compiles_ruleset_preset_into_engine_blob() {
     let tmp = TempDir::new().unwrap();
-    let custom = tmp.path().join("custom");
     let fetched = tmp.path().join("fetched");
-    fs::create_dir_all(&custom).unwrap();
     fs::create_dir_all(&fetched).unwrap();
 
-    fs::write(custom.join("block.txt"), "hand-blocked.example.com\n").unwrap();
-    fs::write(custom.join("allow.txt"), "hand-allowed.example.com\n").unwrap();
-    fs::write(custom.join("wildcards.txt"), "*.ads.example.com\n").unwrap();
-    fs::write(custom.join("regex.txt"), r"^telemetry-\d+\.corp\.net$").unwrap();
+    let upstream_url = "https://example.com/adblock.txt";
+    fs::write(
+        fetched.join(cache_name(upstream_url)),
+        "||upstream-blocked.example.com^\n@@||hand-allowed.example.com^\n||ads.example.com^\n",
+    )
+    .unwrap();
 
-    // Empty urls file — no upstreams.
-    let urls_file = tmp.path().join("light.urls");
-    fs::write(&urls_file, "# no upstreams for this test\n").unwrap();
-
+    let ruleset = tmp.path().join("ruleset.json");
+    fs::write(
+        &ruleset,
+        format!(
+            r#"{{
+              "version": "test",
+              "presets": [
+                {{"id": "light", "urls": [{{"url": "{upstream_url}"}}]}}
+              ]
+            }}"#
+        ),
+    )
+    .unwrap();
     let out = tmp.path().join("filters.bin");
 
     let mut cmd = Command::cargo_bin("engine-compile").unwrap();
-    cmd.arg("--urls")
-        .arg(&urls_file)
-        .arg("--custom")
-        .arg(&custom)
+    cmd.arg("--ruleset")
+        .arg(&ruleset)
+        .arg("--preset")
+        .arg("light")
         .arg("--fetched")
         .arg(&fetched)
         .arg("-o")
@@ -53,45 +58,54 @@ fn cli_compiles_custom_rules_into_engine_blob() {
     let blob = fs::read(&out).unwrap();
     let engine = Engine::load(&blob).expect("load blob");
 
-    assert_eq!(engine.lookup("hand-blocked.example.com"), Verdict::Block);
+    assert_eq!(
+        engine.lookup("upstream-blocked.example.com"),
+        Verdict::Block
+    );
     assert_eq!(engine.lookup("hand-allowed.example.com"), Verdict::Allow);
-    // Wildcard suffix
+    // Upstream adblock suffix rule.
     assert_eq!(engine.lookup("pixel.ads.example.com"), Verdict::Block);
     assert_eq!(engine.lookup("ads.example.com"), Verdict::Block);
-    // Regex
-    assert_eq!(engine.lookup("telemetry-7.corp.net"), Verdict::Block);
-    // Pass
     assert_eq!(engine.lookup("unrelated.com"), Verdict::Pass);
 }
 
 #[test]
-fn cli_reads_upstream_from_fetched_dir() {
+fn cli_compiles_only_selected_preset() {
     let tmp = TempDir::new().unwrap();
-    let custom = tmp.path().join("custom");
     let fetched = tmp.path().join("fetched");
-    fs::create_dir_all(&custom).unwrap();
     fs::create_dir_all(&fetched).unwrap();
 
-    // Write an upstream list file (domains format).
-    let upstream_url = "https://example.com/mylist.txt";
-    let cache_name = sha1_hex(upstream_url);
+    let light_url = "https://example.com/light.txt";
+    let pro_url = "https://example.com/pro.txt";
     fs::write(
-        fetched.join(&cache_name),
-        "# my list\nupstream-blocked.example.com\nanother.example.com\n",
+        fetched.join(cache_name(light_url)),
+        "light-only.example.com\n",
     )
     .unwrap();
+    fs::write(fetched.join(cache_name(pro_url)), "pro-only.example.com\n").unwrap();
 
-    let urls_file = tmp.path().join("light.urls");
-    fs::write(&urls_file, format!("{upstream_url}\n")).unwrap();
+    let ruleset = tmp.path().join("ruleset.json");
+    fs::write(
+        &ruleset,
+        format!(
+            r#"{{
+              "presets": [
+                {{"id": "light", "urls": [{{"url": "{light_url}"}}]}},
+                {{"id": "pro", "urls": [{{"url": "{pro_url}"}}]}}
+              ]
+            }}"#
+        ),
+    )
+    .unwrap();
 
     let out = tmp.path().join("filters.bin");
     Command::cargo_bin("engine-compile")
         .unwrap()
         .args([
-            "--urls",
-            urls_file.to_str().unwrap(),
-            "--custom",
-            custom.to_str().unwrap(),
+            "--ruleset",
+            ruleset.to_str().unwrap(),
+            "--preset",
+            "pro",
             "--fetched",
             fetched.to_str().unwrap(),
             "-o",
@@ -101,26 +115,23 @@ fn cli_reads_upstream_from_fetched_dir() {
         .success();
 
     let engine = Engine::load(&fs::read(&out).unwrap()).unwrap();
-    assert_eq!(
-        engine.lookup("upstream-blocked.example.com"),
-        Verdict::Block
-    );
-    assert_eq!(engine.lookup("another.example.com"), Verdict::Block);
+    assert_eq!(engine.lookup("pro-only.example.com"), Verdict::Block);
+    assert_eq!(engine.lookup("light-only.example.com"), Verdict::Pass);
     assert_eq!(engine.lookup("safe.com"), Verdict::Pass);
 }
 
 #[test]
-fn cli_errors_when_urls_file_missing() {
+fn cli_errors_when_ruleset_file_missing() {
     let tmp = TempDir::new().unwrap();
     let out = tmp.path().join("filters.bin");
-    let missing = tmp.path().join("does-not-exist.urls");
+    let missing = tmp.path().join("does-not-exist.json");
     Command::cargo_bin("engine-compile")
         .unwrap()
         .args([
-            "--urls",
+            "--ruleset",
             missing.to_str().unwrap(),
-            "--custom",
-            tmp.path().to_str().unwrap(),
+            "--preset",
+            "light",
             "--fetched",
             tmp.path().to_str().unwrap(),
             "-o",

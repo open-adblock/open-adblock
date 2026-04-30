@@ -5,7 +5,10 @@ const themeControl = document.getElementById("themeControl");
 const runUpdate = document.getElementById("runUpdate");
 const remoteVersion = document.getElementById("remoteVersion");
 const remoteUpdatedAt = document.getElementById("remoteUpdatedAt");
+const networkRuleCount = document.getElementById("networkRuleCount");
 const cosmeticCount = document.getElementById("cosmeticCount");
+const rulesetCount = document.getElementById("rulesetCount");
+const rulesetList = document.getElementById("rulesetList");
 const remoteError = document.getElementById("remoteError");
 const sourceList = document.getElementById("sourceList");
 const userRulesList = document.getElementById("userRulesList");
@@ -50,6 +53,25 @@ userRulesList.addEventListener("click", async (event) => {
   await load();
 });
 
+rulesetList.addEventListener("change", async (event) => {
+  const input = event.target.closest("input[data-ruleset-id]");
+  if (!input) return;
+
+  input.disabled = true;
+  try {
+    const result = await sendMessage("SET_FILTER_RULESET_ENABLED", {
+      id: input.dataset.rulesetId,
+      enabled: input.checked
+    });
+    showToast(`Applied ${result.networkRuleCount} network rules`);
+    await load();
+  } catch (error) {
+    input.checked = !input.checked;
+    showToast(error.message);
+    await load();
+  }
+});
+
 load();
 
 async function load() {
@@ -77,7 +99,7 @@ async function saveSettings(partial) {
 function render() {
   const settings = state.settings || {};
   const filters = state.filters || {};
-  const packaged = state.cosmeticPackaged || {};
+  const filterRulesets = state.filterRulesets || {};
   const remote = state.cosmeticRemote || {};
 
   document.documentElement.dataset.theme = resolveTheme(settings.theme || "system");
@@ -88,7 +110,11 @@ function render() {
 
   remoteVersion.textContent = filters.remoteVersion || "None";
   remoteUpdatedAt.textContent = filters.remoteUpdatedAt ? formatDate(filters.remoteUpdatedAt) : "Never";
-  cosmeticCount.textContent = formatNumber(countCosmeticRules(packaged) + countCosmeticRules(remote));
+  networkRuleCount.textContent = formatNumber(filterRulesets.networkRuleCount || 0);
+  cosmeticCount.textContent = formatNumber(countCosmeticRules(remote));
+  rulesetCount.textContent = `${formatNumber((filterRulesets.enabledIds || []).length)} / ${formatNumber(
+    (state.filterRulesetCatalog || []).length
+  )}`;
 
   if (filters.remoteLastError) {
     remoteError.hidden = false;
@@ -99,6 +125,7 @@ function render() {
   }
 
   renderSources(filters.sourceSummary || []);
+  renderRulesets(state.filterRulesetCatalog || [], filterRulesets);
   renderUserRules(state.userCosmeticRules || []);
 }
 
@@ -119,6 +146,73 @@ function renderSources(sources) {
       </article>
     `)
     .join("");
+}
+
+function renderRulesets(catalog, filterRulesets) {
+  if (catalog.length === 0) {
+    rulesetList.innerHTML = `<div class="empty">No filter lists are available.</div>`;
+    return;
+  }
+
+  const enabledIds = new Set(filterRulesets.enabledIds || []);
+  const groups = groupRulesets(catalog);
+
+  rulesetList.innerHTML = groups
+    .map(({ group, rulesets }) => `
+      <section class="ruleset-group">
+        <h3>${escapeHtml(formatRulesetGroup(group))}</h3>
+        <div class="list">
+          ${rulesets
+            .map((ruleset) => `
+              <article class="list-item filter-item">
+                <div>
+                  <strong>${escapeHtml(ruleset.name)}</strong>
+                  <code>${escapeHtml(ruleset.homeURL || ruleset.urls?.[0] || "")}</code>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" data-ruleset-id="${escapeHtml(ruleset.id)}" ${
+                    enabledIds.has(ruleset.id) ? "checked" : ""
+                  }>
+                  <span></span>
+                </label>
+              </article>
+            `)
+            .join("")}
+        </div>
+      </section>
+    `)
+    .join("");
+}
+
+function groupRulesets(catalog) {
+  const groups = [];
+  const byGroup = new Map();
+
+  for (const ruleset of catalog) {
+    const group = ruleset.group || "misc";
+    if (!byGroup.has(group)) {
+      byGroup.set(group, []);
+      groups.push(group);
+    }
+    byGroup.get(group).push(ruleset);
+  }
+
+  return groups.map((group) => ({
+    group,
+    rulesets: byGroup.get(group)
+  }));
+}
+
+function formatRulesetGroup(group) {
+  const labels = {
+    ads: "Ads",
+    annoyances: "Annoyances",
+    default: "Default",
+    malware: "Malware",
+    privacy: "Privacy",
+    regions: "Regions"
+  };
+  return labels[group] || group;
 }
 
 function renderUserRules(rules) {
@@ -230,17 +324,43 @@ function getPreviewOptionsState() {
       startedAt: Date.now()
     },
     userCosmeticRules: [],
-    cosmeticPackaged: {
-      global: [],
-      byHost: {
-        "cnn.com": [".ad-slot-dynamic", ".zone__ads"]
+    filterRulesetCatalog: [
+      {
+        id: "ublock-filters",
+        name: "uBlock filters - Ads, trackers, and more",
+        group: "default",
+        homeURL: "https://github.com/uBlockOrigin/uAssets",
+        urls: ["https://ublockorigin.github.io/uAssets/filters/filters.min.txt"],
+        defaultEnabled: true
       },
-      exceptions: {
-        global: [],
-        byHost: {
-          "cnn.com": ["#outbrain_widget_0"]
-        }
+      {
+        id: "easylist",
+        name: "EasyList",
+        group: "default",
+        homeURL: "https://easylist.to/",
+        urls: ["https://ublockorigin.github.io/uAssets/thirdparties/easylist.txt"],
+        defaultEnabled: true
+      },
+      {
+        id: "kor-1",
+        name: "kr: List-KR Classic",
+        group: "regions",
+        homeURL: "https://github.com/List-KR/List-KR#readme",
+        urls: ["https://cdn.jsdelivr.net/npm/@list-kr/filterslists@latest/dist/filterslist-uBlockOrigin-classic.txt"],
+        defaultEnabled: false
       }
+    ],
+    filterRulesets: {
+      catalogVersion: "preview",
+      enabledIds: ["ublock-filters", "easylist"],
+      lastAppliedEnabledIds: ["ublock-filters", "easylist"],
+      lastAppliedAt: Date.now(),
+      lastError: null,
+      networkRuleCount: 18240,
+      cosmeticRuleCount: 7340,
+      unsupportedCount: 0,
+      truncated: false,
+      rulesetSummary: []
     },
     cosmeticRemote: {
       global: [],

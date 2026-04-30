@@ -31,13 +31,13 @@ npm ci
 npm run check
 ```
 
-## Remote Filter Manifest
+## Browser Rulesets
 
-The browser extension defaults to the monorepo-hosted filter manifest:
+The browser extension reads `filters/browser/ruleset.json`, then fetches and compiles the enabled rulesets into MV3 dynamic DNR rules and cosmetic selector data.
 
-```text
-https://cdn.jsdelivr.net/gh/open-adblock/open-adblock@main/filters/manifest.json
-```
+## DNS Rulesets
+
+DNS builds read `filters/dns/ruleset.json`, fetch the selected preset sources, and compile `light` and `pro` filter blobs from that catalog.
 
 ## Licensing
 

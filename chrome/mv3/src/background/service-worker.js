@@ -9,15 +9,18 @@ import {
   getPageBlockedCount,
   parseBadgeCount
 } from "./stats.js";
-import cosmeticPackagedIndex from "../../filters/generated/cosmetic-index.js";
+import rulesetCatalog from "../../filters/generated/ruleset.js";
 
-const DEFAULT_REMOTE_MANIFEST_URL = "https://cdn.jsdelivr.net/gh/open-adblock/open-adblock@main/filters/manifest.json";
 const DEFAULT_REPORT_ENDPOINT_URL = "https://report.open-adblock.com/api/reports";
 const REMOTE_ALARM_NAME = "openadblock.remote-filter-update";
 const USER_SITE_RULE_START = 100000;
 const USER_SITE_RULE_MAX = 5000;
 const REMOTE_RULE_START = 1000000;
-const REMOTE_RULE_MAX = 20000;
+const REMOTE_RULE_ID_RANGE = 25000;
+const REMOTE_RULE_MAX = 25000;
+const REMOTE_RULE_BATCH_SIZE = 500;
+const DEFAULT_DYNAMIC_RULE_LIMIT = 5000;
+const FILTER_RULESET_CATALOG_VERSION = "ruleset-2026-04-30";
 const REPORT_TIMEOUT_MS = 10000;
 const LEGACY_STORAGE_KEYS = ["reports"];
 
@@ -30,18 +33,8 @@ const STORAGE_DEFAULTS = {
     ...createDefaultStats()
   },
   pageStats: {},
-  cosmeticPackaged: {
-    version: null,
-    updatedAt: 0,
-    global: [],
-    byHost: {},
-    exceptions: {
-      global: [],
-      byHost: {}
-    },
-    unsupported: []
-  },
   userCosmeticRules: [],
+  filterRulesets: createDefaultFilterRulesetState(),
   cosmeticRemote: {
     version: null,
     updatedAt: 0,
@@ -106,10 +99,11 @@ function ensureInitialized() {
 async function initializeExtension() {
   await ensureStorageDefaults();
   await removeLegacySettingsConfig();
+  await ensureFilterRulesetState();
   await removeLegacyStorageKeys();
-  await loadPackagedCosmeticIndex();
   await configureActionCountBadge();
   await syncPausedSiteRules();
+  await updateRulesetFiltersIfNeeded();
   await chrome.alarms.create(REMOTE_ALARM_NAME, {
     delayInMinutes: 5,
     periodInMinutes: 24 * 60
@@ -155,37 +149,140 @@ async function removeLegacySettingsConfig() {
   }
 }
 
-async function removeLegacyStorageKeys() {
-  await chrome.storage.local.remove(LEGACY_STORAGE_KEYS);
+async function ensureFilterRulesetState() {
+  const { filterRulesets } = await chrome.storage.local.get("filterRulesets");
+  const defaults = createDefaultFilterRulesetState();
+  const catalogChanged = filterRulesets?.catalogVersion !== FILTER_RULESET_CATALOG_VERSION;
+  const catalogIds = new Set(getFilterRulesetCatalog().map((ruleset) => ruleset.id));
+  const currentEnabledIds = Array.isArray(filterRulesets?.enabledIds)
+    ? filterRulesets.enabledIds.filter((id) => catalogIds.has(id))
+    : defaults.enabledIds;
+
+  const nextState = {
+    ...defaults,
+    ...filterRulesets,
+    catalogVersion: FILTER_RULESET_CATALOG_VERSION,
+    enabledIds: [...new Set(currentEnabledIds)],
+    lastAppliedEnabledIds: catalogChanged ? [] : filterRulesets?.lastAppliedEnabledIds || [],
+    lastAppliedAt: catalogChanged ? null : filterRulesets?.lastAppliedAt || null,
+    networkRuleCount: catalogChanged ? 0 : Number(filterRulesets?.networkRuleCount || 0),
+    cosmeticRuleCount: catalogChanged ? 0 : Number(filterRulesets?.cosmeticRuleCount || 0),
+    unsupportedCount: catalogChanged ? 0 : Number(filterRulesets?.unsupportedCount || 0),
+    truncated: catalogChanged ? false : Boolean(filterRulesets?.truncated),
+    rulesetSummary: catalogChanged ? [] : filterRulesets?.rulesetSummary || []
+  };
+  const currentEnabledKey = Array.isArray(filterRulesets?.enabledIds)
+    ? filterRulesets.enabledIds.join("|")
+    : "";
+
+  if (
+    !filterRulesets ||
+    catalogChanged ||
+    currentEnabledKey !== nextState.enabledIds.join("|")
+  ) {
+    await chrome.storage.local.set({ filterRulesets: nextState });
+  }
+
+  return nextState;
 }
 
-async function loadPackagedCosmeticIndex() {
-  try {
-    const cosmeticPackaged = cosmeticPackagedIndex;
-    if (!isCosmeticIndex(cosmeticPackaged)) {
-      throw new Error("Packaged cosmetic filter index is invalid");
-    }
+function createDefaultFilterRulesetState() {
+  return {
+    catalogVersion: FILTER_RULESET_CATALOG_VERSION,
+    enabledIds: getDefaultEnabledRulesetIds(),
+    lastAppliedEnabledIds: [],
+    lastAppliedAt: null,
+    lastError: null,
+    networkRuleCount: 0,
+    cosmeticRuleCount: 0,
+    unsupportedCount: 0,
+    truncated: false,
+    rulesetSummary: []
+  };
+}
 
-    const current = await chrome.storage.local.get("cosmeticPackaged");
-    if (
-      current.cosmeticPackaged?.version !== cosmeticPackaged.version ||
-      current.cosmeticPackaged?.updatedAt !== cosmeticPackaged.updatedAt
-    ) {
-      await chrome.storage.local.set({ cosmeticPackaged });
-    }
-  } catch (error) {
-    console.warn("OpenAdBlock packaged cosmetic filters unavailable", error);
+function getDefaultEnabledRulesetIds() {
+  const languageCodes = getNavigatorLanguageCodes();
+  return getFilterRulesetCatalog()
+    .filter((ruleset) => ruleset.defaultEnabled || rulesetMatchesLanguages(ruleset, languageCodes))
+    .map((ruleset) => ruleset.id);
+}
+
+function getFilterRulesetCatalog() {
+  return rulesetCatalog
+    .map(normalizeFilterRulesetEntry)
+    .filter(Boolean);
+}
+
+function normalizeFilterRulesetEntry(entry) {
+  if (!entry || typeof entry.id !== "string" || typeof entry.name !== "string") return null;
+
+  const excludedPlatforms = Array.isArray(entry.excludedPlatforms)
+    ? entry.excludedPlatforms.map((platform) => String(platform).toLowerCase())
+    : [];
+  if (excludedPlatforms.includes("chromium") || excludedPlatforms.includes("chrome")) return null;
+
+  const urls = Array.isArray(entry.urls)
+    ? entry.urls
+        .map((url) => resolveRulesetUrl(String(url), entry))
+        .filter((url) => isHttpsUrl(url))
+    : [];
+  if (urls.length === 0) return null;
+
+  return {
+    id: entry.id,
+    name: entry.name,
+    group: String(entry.group || "misc"),
+    lang: entry.lang ? String(entry.lang) : "",
+    tags: entry.tags ? String(entry.tags) : "",
+    homeURL: isHttpsUrl(entry.homeURL) ? String(entry.homeURL) : "",
+    urls,
+    trusted: Boolean(entry.trusted),
+    defaultEnabled: Boolean(entry.enabled)
+  };
+}
+
+function resolveRulesetUrl(url, entry) {
+  return url.replaceAll("{commit}", String(entry.commit || "master"));
+}
+
+function isHttpsUrl(url) {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
   }
 }
 
-function isCosmeticIndex(value) {
-  return Boolean(
-    value &&
-      Array.isArray(value.global) &&
-      value.byHost &&
-      Array.isArray(value.exceptions?.global) &&
-      value.exceptions?.byHost
-  );
+function getNavigatorLanguageCodes() {
+  const browserNavigator = globalThis.navigator;
+  const languages = Array.isArray(browserNavigator?.languages) && browserNavigator.languages.length
+    ? browserNavigator.languages
+    : [browserNavigator?.language].filter(Boolean);
+  const codes = new Set();
+
+  for (const language of languages) {
+    const code = String(language || "")
+      .trim()
+      .toLowerCase()
+      .split("-")[0]
+      .replace(/[^a-z]/g, "");
+    if (code) codes.add(code);
+  }
+
+  return codes;
+}
+
+function rulesetMatchesLanguages(ruleset, languageCodes) {
+  if (!ruleset.lang || languageCodes.size === 0) return false;
+  return ruleset.lang
+    .split(/\s+/)
+    .map((lang) => lang.trim().toLowerCase())
+    .some((lang) => languageCodes.has(lang));
+}
+
+async function removeLegacyStorageKeys() {
+  await chrome.storage.local.remove(LEGACY_STORAGE_KEYS);
 }
 
 async function configureActionCountBadge() {
@@ -197,6 +294,31 @@ async function configureActionCountBadge() {
   } catch (error) {
     console.warn("OpenAdBlock badge count unavailable", error);
   }
+}
+
+async function updateRulesetFiltersIfNeeded() {
+  const { filterRulesets } = await chrome.storage.local.get("filterRulesets");
+
+  if (filterRulesets?.lastAppliedAt && await hasExpectedRemoteRules(filterRulesets)) return;
+
+  try {
+    await updateRemoteFilters();
+  } catch (error) {
+    await recordRemoteError(error);
+  }
+}
+
+async function hasExpectedRemoteRules(filterRulesets) {
+  const enabledIds = Array.isArray(filterRulesets.enabledIds) ? filterRulesets.enabledIds : [];
+  const appliedEnabledIds = Array.isArray(filterRulesets.lastAppliedEnabledIds)
+    ? filterRulesets.lastAppliedEnabledIds
+    : [];
+  if (enabledIds.join("|") !== appliedEnabledIds.join("|")) return false;
+
+  const expectedCount = Number(filterRulesets.networkRuleCount || 0);
+  const currentRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const remoteRuleCount = currentRules.filter((rule) => isRemoteRuleId(rule.id)).length;
+  return remoteRuleCount === expectedCount;
 }
 
 async function handleMessage(message, sender) {
@@ -226,6 +348,8 @@ async function handleMessage(message, sender) {
       return getOptionsState();
     case "SAVE_SETTINGS":
       return saveSettings(message.settings || {});
+    case "SET_FILTER_RULESET_ENABLED":
+      return setFilterRulesetEnabled(message.id, Boolean(message.enabled));
     case "REMOVE_USER_COSMETIC_RULE":
       return removeUserCosmeticRule(message.id);
     case "RUN_REMOTE_UPDATE":
@@ -486,16 +610,21 @@ async function reportBreakage(message) {
 }
 
 async function getOptionsState() {
-  return chrome.storage.local.get([
+  const state = await chrome.storage.local.get([
     "settings",
     "siteState",
     "stats",
     "pageStats",
     "userCosmeticRules",
-    "cosmeticPackaged",
+    "filterRulesets",
     "cosmeticRemote",
     "filters"
   ]);
+
+  return {
+    ...state,
+    filterRulesetCatalog: getFilterRulesetCatalog()
+  };
 }
 
 async function saveSettings(partialSettings) {
@@ -514,6 +643,34 @@ async function saveSettings(partialSettings) {
 
   await chrome.storage.local.set({ settings: nextSettings });
   return { settings: nextSettings };
+}
+
+async function setFilterRulesetEnabled(id, enabled) {
+  const catalog = getFilterRulesetCatalog();
+  const ruleset = catalog.find((entry) => entry.id === id);
+  if (!ruleset) {
+    throw new Error("Unknown filter ruleset");
+  }
+
+  const currentState = await ensureFilterRulesetState();
+  const enabledIds = new Set(currentState.enabledIds || []);
+
+  if (enabled) {
+    enabledIds.add(ruleset.id);
+  } else {
+    enabledIds.delete(ruleset.id);
+  }
+
+  const nextState = {
+    ...currentState,
+    enabledIds: catalog
+      .map((entry) => entry.id)
+      .filter((catalogId) => enabledIds.has(catalogId)),
+    lastError: null
+  };
+
+  await chrome.storage.local.set({ filterRulesets: nextState });
+  return updateRemoteFilters();
 }
 
 async function removeUserCosmeticRule(id) {
@@ -574,96 +731,222 @@ async function captureReportScreenshot(windowId) {
 }
 
 async function updateRemoteFilters() {
-  const manifestUrl = DEFAULT_REMOTE_MANIFEST_URL;
-  const manifest = await fetchJson(manifestUrl);
-  validateRemoteManifest(manifest);
+  const { filterRulesets = createDefaultFilterRulesetState() } = await chrome.storage.local.get("filterRulesets");
+
+  const catalog = getFilterRulesetCatalog();
+  const enabledIds = new Set(
+    Array.isArray(filterRulesets.enabledIds) ? filterRulesets.enabledIds : getDefaultEnabledRulesetIds()
+  );
+  const selectedRulesets = catalog.filter((ruleset) => enabledIds.has(ruleset.id));
 
   const networkTexts = [];
   const cosmeticSources = [];
   const sourceSummary = [];
+  const rulesetSummary = [];
+  const fetchErrors = [];
 
-  for (const file of manifest.files || []) {
-    const fileUrl = new URL(file.url, manifestUrl).toString();
-    const text = await fetchText(fileUrl);
+  for (const ruleset of selectedRulesets) {
+    const fetchedTexts = [];
 
-    if (file.sha256) {
-      const actualHash = await sha256(text);
-      if (actualHash !== file.sha256.toLowerCase()) {
-        throw new Error(`Checksum mismatch for ${file.url}`);
+    for (const url of ruleset.urls) {
+      try {
+        const text = await fetchText(url);
+        fetchedTexts.push({ text, url });
+
+        networkTexts.push({ text, defaultAction: "block" });
+        cosmeticSources.push({ text, defaultException: false });
+      } catch (error) {
+        fetchErrors.push(`${ruleset.id}: ${error.message || String(error)}`);
       }
     }
 
     sourceSummary.push({
-      name: String(file.name || file.type || file.url),
-      url: fileUrl,
-      license: String(file.license || "unknown"),
-      revision: file.revision ? String(file.revision) : undefined
+      id: ruleset.id,
+      name: ruleset.name,
+      group: ruleset.group,
+      url: ruleset.homeURL || ruleset.urls[0],
+      license: "upstream",
+      sourceCount: fetchedTexts.length,
+      failedSourceCount: ruleset.urls.length - fetchedTexts.length
     });
 
-    if (file.type === "network") {
-      networkTexts.push({ text, defaultAction: "block" });
-    } else if (file.type === "allowlist-network") {
-      networkTexts.push({ text, defaultAction: "allow" });
-    } else if (file.type === "cosmetic" || file.type === "allowlist-cosmetic") {
-      cosmeticSources.push({
-        text,
-        defaultException: file.type === "allowlist-cosmetic"
-      });
-    }
+    rulesetSummary.push({
+      id: ruleset.id,
+      name: ruleset.name,
+      group: ruleset.group,
+      sourceCount: fetchedTexts.length,
+      failedSourceCount: ruleset.urls.length - fetchedTexts.length,
+      bytes: fetchedTexts.reduce((sum, source) => sum + source.text.length, 0)
+    });
   }
 
-  const networkRules = compileNetworkRules(networkTexts, REMOTE_RULE_START, REMOTE_RULE_MAX);
-  const cosmeticRemote = compileCosmeticRules(cosmeticSources, manifest.version);
+  if (selectedRulesets.length > 0 && networkTexts.length === 0) {
+    throw new Error(fetchErrors[0] || "No enabled filter source could be fetched");
+  }
+
   const currentRules = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = currentRules
     .map((rule) => rule.id)
-    .filter((id) => id >= REMOTE_RULE_START && id < REMOTE_RULE_START + REMOTE_RULE_MAX);
+    .filter(isRemoteRuleId);
+  const nonRemoteRuleCount = currentRules.length - removeRuleIds.length;
+  const remoteRuleLimit = getAvailableRemoteRuleLimit(nonRemoteRuleCount);
 
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds,
-    addRules: networkRules.rules
-  });
+  const networkRules = compileNetworkRules(networkTexts, REMOTE_RULE_START, remoteRuleLimit);
+  const cosmeticRemote = compileCosmeticRules(cosmeticSources, FILTER_RULESET_CATALOG_VERSION);
 
-  const filters = {
+  const ruleApplyResult = await replaceRemoteDynamicRules(removeRuleIds, networkRules.rules);
+  const appliedNetworkRules = ruleApplyResult.appliedRules;
+  const ruleApplyErrors = ruleApplyResult.skippedRules.map((entry) => entry.error);
+  const remoteErrors = [...fetchErrors, ...ruleApplyErrors];
+
+  const nextFilterRulesets = {
+    ...createDefaultFilterRulesetState(),
+    ...filterRulesets,
+    catalogVersion: FILTER_RULESET_CATALOG_VERSION,
+    enabledIds: selectedRulesets.map((ruleset) => ruleset.id),
+    lastAppliedEnabledIds: selectedRulesets.map((ruleset) => ruleset.id),
+    lastAppliedAt: Date.now(),
+    lastError: formatFetchErrors(remoteErrors),
+    networkRuleCount: appliedNetworkRules.length,
+    cosmeticRuleCount: countCosmeticRules(cosmeticRemote),
+    unsupportedCount:
+      networkRules.unsupported.length + cosmeticRemote.unsupported.length + ruleApplyResult.skippedRules.length,
+    truncated: networkRules.rules.length >= remoteRuleLimit || appliedNetworkRules.length < networkRules.rules.length,
+    rulesetSummary
+  };
+
+  const nextFilters = {
     buildId: STORAGE_DEFAULTS.filters.buildId,
     builtAt: STORAGE_DEFAULTS.filters.builtAt,
-    remoteVersion: String(manifest.version || ""),
+    remoteVersion: FILTER_RULESET_CATALOG_VERSION,
     remoteUpdatedAt: Date.now(),
-    remoteLastError: null,
+    remoteLastError: formatFetchErrors(remoteErrors),
     sourceSummary
   };
 
-  await chrome.storage.local.set({ cosmeticRemote, filters });
+  await chrome.storage.local.set({
+    cosmeticRemote,
+    filters: nextFilters,
+    filterRulesets: nextFilterRulesets
+  });
 
   return {
-    version: filters.remoteVersion,
-    networkRuleCount: networkRules.rules.length,
+    version: nextFilters.remoteVersion,
+    networkRuleCount: appliedNetworkRules.length,
     cosmeticRuleCount: countCosmeticRules(cosmeticRemote),
-    unsupportedCount: networkRules.unsupported.length + cosmeticRemote.unsupported.length
+    unsupportedCount: nextFilterRulesets.unsupportedCount,
+    enabledRulesetCount: selectedRulesets.length,
+    truncated: nextFilterRulesets.truncated
   };
 }
 
+async function replaceRemoteDynamicRules(removeRuleIds, candidateRules) {
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds,
+    addRules: []
+  });
+
+  const appliedRules = [];
+  const skippedRules = [];
+
+  for (let index = 0; index < candidateRules.length; index += REMOTE_RULE_BATCH_SIZE) {
+    const batch = candidateRules.slice(index, index + REMOTE_RULE_BATCH_SIZE);
+    const result = await addDynamicRuleBatch(batch);
+    appliedRules.push(...result.appliedRules);
+    skippedRules.push(...result.skippedRules);
+    if (result.limitReached) break;
+  }
+
+  return { appliedRules, skippedRules };
+}
+
+async function addDynamicRuleBatch(rules) {
+  if (rules.length === 0) {
+    return { appliedRules: [], skippedRules: [], limitReached: false };
+  }
+
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({ addRules: rules });
+    return { appliedRules: rules, skippedRules: [], limitReached: false };
+  } catch (error) {
+    if (isRuleLimitError(error)) {
+      return {
+        appliedRules: [],
+        skippedRules: [{ rule: null, error: error.message || String(error) }],
+        limitReached: true
+      };
+    }
+
+    if (rules.length === 1) {
+      return {
+        appliedRules: [],
+        skippedRules: [{ rule: rules[0], error: error.message || String(error) }],
+        limitReached: false
+      };
+    }
+
+    const middle = Math.floor(rules.length / 2);
+    const first = await addDynamicRuleBatch(rules.slice(0, middle));
+    if (first.limitReached) return first;
+
+    const second = await addDynamicRuleBatch(rules.slice(middle));
+    return {
+      appliedRules: [...first.appliedRules, ...second.appliedRules],
+      skippedRules: [...first.skippedRules, ...second.skippedRules],
+      limitReached: second.limitReached
+    };
+  }
+}
+
+function isRuleLimitError(error) {
+  const message = (error?.message || String(error)).toLowerCase();
+  return message.includes("rule limit") || message.includes("maximum number") || message.includes("quota");
+}
+
+function isRemoteRuleId(id) {
+  return id >= REMOTE_RULE_START && id < REMOTE_RULE_START + REMOTE_RULE_ID_RANGE;
+}
+
+function getAvailableRemoteRuleLimit(nonRemoteRuleCount) {
+  const dynamicRuleLimit = getDynamicRuleLimit();
+  return Math.max(0, Math.min(REMOTE_RULE_MAX, dynamicRuleLimit - nonRemoteRuleCount));
+}
+
+function getDynamicRuleLimit() {
+  const dnr = chrome.declarativeNetRequest || {};
+  const candidates = [
+    dnr.MAX_NUMBER_OF_DYNAMIC_RULES,
+    dnr.MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES
+  ]
+    .map((candidate) => Number(candidate))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  return candidates.length > 0 ? Math.max(...candidates) : DEFAULT_DYNAMIC_RULE_LIMIT;
+}
+
 async function recordRemoteError(error) {
-  const { filters = STORAGE_DEFAULTS.filters } = await chrome.storage.local.get("filters");
+  const {
+    filters = STORAGE_DEFAULTS.filters,
+    filterRulesets = createDefaultFilterRulesetState()
+  } = await chrome.storage.local.get(["filters", "filterRulesets"]);
+  const message = error.message || String(error);
   await chrome.storage.local.set({
     filters: {
       ...filters,
-      remoteLastError: error.message || String(error)
+      remoteLastError: message
+    },
+    filterRulesets: {
+      ...filterRulesets,
+      lastError: message
     }
   });
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url, {
-    cache: "no-store",
-    credentials: "omit"
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
-  }
-
-  return response.json();
+function formatFetchErrors(errors) {
+  if (!errors.length) return null;
+  const visibleErrors = errors.slice(0, 3).join("; ");
+  const remainingCount = errors.length - 3;
+  return remainingCount > 0 ? `${visibleErrors}; ${remainingCount} more source errors` : visibleErrors;
 }
 
 async function fetchText(url) {
@@ -677,32 +960,6 @@ async function fetchText(url) {
   }
 
   return response.text();
-}
-
-function validateRemoteManifest(manifest) {
-  if (!manifest || manifest.schemaVersion !== 1) {
-    throw new Error("Unsupported remote filter manifest schema");
-  }
-
-  if (!Array.isArray(manifest.files)) {
-    throw new Error("Remote filter manifest must include files");
-  }
-
-  for (const file of manifest.files) {
-    if (!file || typeof file.url !== "string" || typeof file.type !== "string") {
-      throw new Error("Remote filter file entries require url and type");
-    }
-
-    if (!["network", "allowlist-network", "cosmetic", "allowlist-cosmetic"].includes(file.type)) {
-      throw new Error(`Unsupported remote filter file type: ${file.type}`);
-    }
-  }
-}
-
-async function sha256(text) {
-  const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function normalizeReportCategory(value) {

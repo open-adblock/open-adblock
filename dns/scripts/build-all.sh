@@ -21,23 +21,24 @@ if [ ! -d "$FILTERS_ROOT/dns" ]; then
 fi
 
 DNS_FILTERS="$FILTERS_ROOT/dns"
+DNS_RULESET="$DNS_FILTERS/ruleset.json"
 
 echo "==> 1. fetch upstream lists"
 mkdir -p "$DNS_FILTERS/fetched"
 deno run --allow-read --allow-write --allow-net \
-  scripts/fetch-upstream.ts "$DNS_FILTERS/light.urls" "$DNS_FILTERS/pro.urls"
+  scripts/fetch-upstream.ts "$DNS_RULESET"
 
 echo "==> 2. compile filter blobs"
 mkdir -p "$DNS_FILTERS/dist"
 cargo run --quiet --release -p engine --bin engine-compile -- \
-  --urls "$DNS_FILTERS/light.urls" \
-  --custom "$DNS_FILTERS/custom" \
+  --ruleset "$DNS_RULESET" \
+  --preset light \
   --fetched "$DNS_FILTERS/fetched" \
   -o "$DNS_FILTERS/dist/light.bin"
 
 cargo run --quiet --release -p engine --bin engine-compile -- \
-  --urls "$DNS_FILTERS/pro.urls" \
-  --custom "$DNS_FILTERS/custom" \
+  --ruleset "$DNS_RULESET" \
+  --preset pro \
   --fetched "$DNS_FILTERS/fetched" \
   -o "$DNS_FILTERS/dist/pro.bin"
 
@@ -61,9 +62,9 @@ cp "$DNS_FILTERS/dist/pro.bin"         doh/wasm/pro.bin
 
 echo "==> 5. render NOTICE files"
 deno run --allow-read \
-  scripts/generate-notice.ts light "$DNS_FILTERS/light.urls" > "$DNS_FILTERS/dist/NOTICE.light.txt"
+  scripts/generate-notice.ts light "$DNS_RULESET" > "$DNS_FILTERS/dist/NOTICE.light.txt"
 deno run --allow-read \
-  scripts/generate-notice.ts pro "$DNS_FILTERS/pro.urls" > "$DNS_FILTERS/dist/NOTICE.pro.txt"
+  scripts/generate-notice.ts pro "$DNS_RULESET" > "$DNS_FILTERS/dist/NOTICE.pro.txt"
 cat "$DNS_FILTERS/dist/NOTICE.light.txt" "$DNS_FILTERS/dist/NOTICE.pro.txt" > doh/wasm/NOTICE.txt
 
 echo "==> done"

@@ -1,15 +1,15 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-net
 /**
- * Download upstream blocklist URLs listed in one or more `.urls` files into
- * a `fetched/` directory next to the `.urls` files. Uses ETag / Last-Modified
- * for conditional fetches so reruns are cheap.
+ * Download upstream blocklist URLs listed in `filters/dns/ruleset.json` into
+ * a `fetched/` directory next to the ruleset catalog. Uses ETag /
+ * Last-Modified for conditional fetches so reruns are cheap.
  *
  * The cache filename must match `engine::compile::url_cache_filename(url)` in
  * the Rust engine — a 16-char hex of FxHash64 + `.txt`. We reimplement that
  * hash here (FxHash 64-bit rotating variant).
  *
  * Usage:
- *   deno run -A scripts/fetch-upstream.ts ../filters/dns/light.urls ../filters/dns/pro.urls
+ *   deno run -A scripts/fetch-upstream.ts ../filters/dns/ruleset.json [preset ...]
  */
 
 function fxHash64(s: string): bigint {
@@ -49,6 +49,24 @@ export function urlCacheFilename(url: string): string {
   return `${h.toString(16).padStart(16, "0")}.txt`;
 }
 
+export interface DnsRulesetSource {
+  url: string;
+  name?: string;
+  license?: string;
+}
+
+export interface DnsRulesetPreset {
+  id: string;
+  name?: string;
+  description?: string;
+  urls: DnsRulesetSource[];
+}
+
+export interface DnsRuleset {
+  version?: string;
+  presets: DnsRulesetPreset[];
+}
+
 interface CacheMeta {
   etag?: string;
   lastModified?: string;
@@ -66,10 +84,6 @@ async function writeMeta(metaPath: string, meta: CacheMeta): Promise<void> {
   await Deno.writeTextFile(metaPath, JSON.stringify(meta));
 }
 
-function stripComment(line: string): string {
-  return line.split("#")[0].trim();
-}
-
 function parentDir(path: string): string {
   const normalized = path.replaceAll("\\", "/");
   const index = normalized.lastIndexOf("/");
@@ -84,12 +98,8 @@ function childPath(dir: string, child: string): string {
   return `${dir}/${child}`;
 }
 
-function fetchedDirFor(urlsFiles: string[]): string {
-  const dirs = new Set(urlsFiles.map(parentDir));
-  if (dirs.size === 1) {
-    return childPath([...dirs][0], "fetched");
-  }
-  return "filters/fetched";
+function fetchedDirFor(rulesetFile: string): string {
+  return childPath(parentDir(rulesetFile), "fetched");
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -132,26 +142,89 @@ async function fetchOne(url: string, outDir: string): Promise<"fresh" | "cached"
   return "fresh";
 }
 
-async function readUrls(urlsFile: string): Promise<string[]> {
-  const text = await Deno.readTextFile(urlsFile);
-  return text.split("\n").map(stripComment).filter((l) => l.length > 0);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function readDnsRuleset(path: string): Promise<DnsRuleset> {
+  const raw = JSON.parse(await Deno.readTextFile(path)) as unknown;
+  if (!isRecord(raw) || !Array.isArray(raw.presets)) {
+    throw new Error(`DNS ruleset must contain a presets array: ${path}`);
+  }
+
+  const presets = raw.presets.map((preset, index): DnsRulesetPreset => {
+    if (!isRecord(preset) || typeof preset.id !== "string" || !Array.isArray(preset.urls)) {
+      throw new Error(`DNS ruleset preset ${index} must contain id and urls`);
+    }
+    const urls = preset.urls.map((source, sourceIndex): DnsRulesetSource => {
+      if (!isRecord(source) || typeof source.url !== "string" || source.url.trim() === "") {
+        throw new Error(`DNS ruleset preset ${preset.id} source ${sourceIndex} must contain url`);
+      }
+      return {
+        url: source.url.trim(),
+        name: typeof source.name === "string" ? source.name : undefined,
+        license: typeof source.license === "string" ? source.license : undefined,
+      };
+    }).filter((source) => source.url.length > 0);
+    if (urls.length === 0) {
+      throw new Error(`DNS ruleset preset ${preset.id} must contain at least one url`);
+    }
+    return {
+      id: preset.id,
+      name: typeof preset.name === "string" ? preset.name : undefined,
+      description: typeof preset.description === "string" ? preset.description : undefined,
+      urls,
+    };
+  });
+
+  return {
+    version: typeof raw.version === "string" ? raw.version : undefined,
+    presets,
+  };
+}
+
+export function selectPresetSources(
+  ruleset: DnsRuleset,
+  presetIds: string[],
+): Array<{ preset: DnsRulesetPreset; source: DnsRulesetSource }> {
+  const selectedIds = presetIds.length > 0
+    ? new Set(presetIds)
+    : new Set(ruleset.presets.map((preset) => preset.id));
+  const knownIds = new Set(ruleset.presets.map((preset) => preset.id));
+  for (const id of selectedIds) {
+    if (!knownIds.has(id)) {
+      throw new Error(`unknown DNS ruleset preset: ${id}`);
+    }
+  }
+  const selected: Array<{ preset: DnsRulesetPreset; source: DnsRulesetSource }> = [];
+  for (const preset of ruleset.presets) {
+    if (!selectedIds.has(preset.id)) continue;
+    for (const source of preset.urls) {
+      selected.push({ preset, source });
+    }
+  }
+  return selected;
 }
 
 async function main(args: string[]) {
   if (args.length === 0) {
-    console.error("usage: fetch-upstream.ts <urls-file> [urls-file ...]");
+    console.error("usage: fetch-upstream.ts <ruleset.json> [preset ...]");
     Deno.exit(2);
   }
-  const fetchedDir = fetchedDirFor(args);
+  const [rulesetFile, ...presetIds] = args;
+  const ruleset = await readDnsRuleset(rulesetFile);
+  const sources = selectPresetSources(ruleset, presetIds);
+  const fetchedDir = fetchedDirFor(rulesetFile);
   await ensureDir(fetchedDir);
   let errors = 0;
-  for (const f of args) {
-    console.log(`== ${f}`);
-    const urls = await readUrls(f);
-    for (const u of urls) {
-      const r = await fetchOne(u, fetchedDir);
-      if (r === "error") errors += 1;
+  let currentPreset = "";
+  for (const { preset, source } of sources) {
+    if (preset.id !== currentPreset) {
+      currentPreset = preset.id;
+      console.log(`== ${preset.id}`);
     }
+    const r = await fetchOne(source.url, fetchedDir);
+    if (r === "error") errors += 1;
   }
   if (errors > 0) {
     console.error(`${errors} upstream(s) failed`);

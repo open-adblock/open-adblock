@@ -8,7 +8,7 @@ import vm from "node:vm";
 const testDir = dirname(fileURLToPath(import.meta.url));
 const mv3Root = dirname(testDir);
 
-test("content script injects packaged CNN cosmetic selectors", async () => {
+test("content script injects ruleset cosmetic selectors", async () => {
   const script = await readFile(join(mv3Root, "src/content/cosmetic.js"), "utf8");
   const messages = [];
   const document = createDocument({
@@ -18,8 +18,7 @@ test("content script injects packaged CNN cosmetic selectors", async () => {
   const storage = {
     siteState: {},
     userCosmeticRules: [],
-    cosmeticRemote: emptyCosmeticIndex(),
-    cosmeticPackaged: {
+    cosmeticRemote: {
       ...emptyCosmeticIndex(),
       byHost: {
         "cnn.com": [".ad-slot-header__wrapper", ".zone__ads"]
@@ -62,6 +61,7 @@ test("content script injects packaged CNN cosmetic selectors", async () => {
 
   vm.runInNewContext(script, context);
   await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   const style = document.getElementById("openadblock-cosmetic-style");
   assert.ok(style);
@@ -71,6 +71,75 @@ test("content script injects packaged CNN cosmetic selectors", async () => {
   assert.equal(messages.at(-1).url, "https://www.cnn.com/");
   assert.equal(messages.at(-1).hostname, "www.cnn.com");
   assert.equal(messages.at(-1).cosmeticBlocked, 3);
+});
+
+test("content script injects NYPost generic CSS before page activity counting", async () => {
+  const script = await readFile(join(mv3Root, "src/content/cosmetic.js"), "utf8");
+  const messages = [];
+  const document = createDocument({
+    ".ad-slot": 2,
+    ".dfp-ad": 2,
+    ".widget_nypost_dfp_ad_widget": 1
+  });
+  const storage = {
+    siteState: {},
+    userCosmeticRules: [],
+    cosmeticRemote: {
+      ...emptyCosmeticIndex(),
+      global: [".ad-slot", ".dfp-ad", "+js(aopw, _sp_)", "img[src$=\"/knewz_300x250.png\"]:upward(.widget_text)"],
+      byHost: {
+        "nypost.com": [".ad.ad--container", ".widget_nypost_dfp_ad_widget"]
+      }
+    }
+  };
+  const context = {
+    chrome: {
+      runtime: {
+        lastError: null,
+        sendMessage(message, callback) {
+          messages.push(message);
+          callback?.();
+        }
+      },
+      storage: {
+        local: {
+          get(keys, callback) {
+            callback(Object.fromEntries(keys.map((key) => [key, storage[key]])));
+          }
+        },
+        onChanged: {
+          addListener() {}
+        }
+      }
+    },
+    clearTimeout() {},
+    document,
+    location: {
+      hostname: "www.nypost.com",
+      href: "https://nypost.com/"
+    },
+    setTimeout(callback) {
+      queueMicrotask(callback);
+      return 1;
+    }
+  };
+  context.globalThis = context;
+  context.window = context;
+
+  vm.runInNewContext(script, context);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const style = document.getElementById("openadblock-cosmetic-style");
+  assert.ok(style);
+  assert.match(style.textContent, /\.ad-slot\{display:none!important;\}/);
+  assert.match(style.textContent, /\.dfp-ad\{display:none!important;\}/);
+  assert.match(style.textContent, /\.ad\.ad--container\{display:none!important;\}/);
+  assert.match(style.textContent, /\.widget_nypost_dfp_ad_widget\{display:none!important;\}/);
+  assert.doesNotMatch(style.textContent, /\+js/);
+  assert.doesNotMatch(style.textContent, /:upward/);
+  assert.equal(messages.at(-1).hostname, "www.nypost.com");
+  assert.equal(messages.at(-1).cosmeticBlocked, 5);
 });
 
 function emptyCosmeticIndex() {

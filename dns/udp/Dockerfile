@@ -35,15 +35,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/build/dns/target,sharing=locked \
     mkdir -p ../filters/dns/fetched ../filters/dns/dist \
  && deno run --allow-read --allow-write --allow-net \
-      scripts/fetch-upstream.ts ../filters/dns/light.urls ../filters/dns/pro.urls \
+      scripts/fetch-upstream.ts ../filters/dns/ruleset.json \
  && cargo run --quiet --release -p engine --bin engine-compile -- \
-      --urls ../filters/dns/light.urls \
-      --custom ../filters/dns/custom \
+      --ruleset ../filters/dns/ruleset.json \
+      --preset light \
       --fetched ../filters/dns/fetched \
       -o ../filters/dns/dist/light.bin \
  && cargo run --quiet --release -p engine --bin engine-compile -- \
-      --urls ../filters/dns/pro.urls \
-      --custom ../filters/dns/custom \
+      --ruleset ../filters/dns/ruleset.json \
+      --preset pro \
       --fetched ../filters/dns/fetched \
       -o ../filters/dns/dist/pro.bin \
  && cargo build --release -p dns-udp --bin dns-udp \

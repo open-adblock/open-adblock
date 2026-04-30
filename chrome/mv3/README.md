@@ -9,10 +9,9 @@ Filter data lives in the monorepo at
 
 ## Current Scope
 
-- Static DNR network blocking seed rules
-- Data-only remote filter update flow
-- Dynamic DNR rules for remote network updates and per-site pause
-- CSS cosmetic filtering through packaged content scripts
+- Ruleset-based filter updates from `filters/browser/ruleset.json`
+- Dynamic DNR rules for selected rulesets and per-site pause
+- CSS cosmetic filtering from selected rulesets through packaged content scripts
 - In-page block element picker
 - Breakage reports submitted through the filters Cloudflare Worker
 - Popup and options UI in English
@@ -31,13 +30,3 @@ npm run filters:link
 ```sh
 npm run validate
 ```
-
-## Remote Filter Manifest
-
-The default endpoint is:
-
-```text
-https://cdn.jsdelivr.net/gh/open-adblock/open-adblock@main/filters/manifest.json
-```
-
-Remote updates are filter data only. JavaScript, WebAssembly, scriptlets, and procedural logic must not be delivered through the filter endpoint.

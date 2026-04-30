@@ -2,8 +2,6 @@
 
 OpenAdBlock extension source code is licensed under GPL-3.0-only.
 
-The current scaffold bundles a small EasyList-derived CNN cosmetic filtering fixture to verify the packaged CSS filtering path. Future packaged or remote filter snapshots must include attribution for each source list and preserve the relevant third-party license notices.
+The extension packages ruleset catalog metadata derived from the uBlock Origin MV3 ruleset catalog, then fetches selected filter-list data at runtime. Third-party filter lists keep their own licenses and attribution.
 
-- EasyList: `https://easylist.to/easylist/easylist.txt`, GPL-3.0-or-later
-
-OpenAdBlock is uBO filter-based. It is not a uBlock Origin fork and does not imply endorsement by uBlock Origin contributors.
+OpenAdBlock is not a uBlock Origin fork and does not imply endorsement by uBlock Origin contributors.

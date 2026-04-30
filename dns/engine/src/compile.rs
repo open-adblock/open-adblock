@@ -5,11 +5,6 @@
 //! - `domains` — bare `domain.com` per line
 //! - `adblock` — `||domain.com^` block, `@@||domain.com^` allow
 //! - `dnsmasq` — `address=/domain.com/0.0.0.0` / `server=/domain.com/`
-//!
-//! Custom rule files (not auto-detected; caller specifies):
-//! - `wildcards.txt` — `*.example.com` suffix rules
-//! - `regex.txt` — raw regex patterns, one per line
-//! - `block.txt` / `allow.txt` — one domain per line (same as `domains` format)
 
 use crate::matcher::RuleSetBuilder;
 use thiserror::Error;

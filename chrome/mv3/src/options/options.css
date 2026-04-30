@@ -289,7 +289,7 @@ h1 {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 10px;
   margin-bottom: 24px;
 }
@@ -327,6 +327,18 @@ h1 {
 .list {
   display: grid;
   gap: 8px;
+}
+
+.ruleset-list {
+  display: grid;
+  gap: 18px;
+}
+
+.ruleset-group h3 {
+  margin: 0 0 8px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .list-item {
@@ -369,6 +381,10 @@ h1 {
 
 .list-item button:hover {
   color: var(--danger);
+}
+
+.filter-item .toggle {
+  flex: 0 0 auto;
 }
 
 .empty,

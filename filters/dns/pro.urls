@@ -1,6 +1,0 @@
-# Pro preset (pro.dns.open-adblock.com)
-# Target: aggressive blocking + phishing + error trackers. ~400k entries.
-#
-# Upstream license: GPLv3. See dns/NOTICE.template for distribution obligations.
-
-https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/pro.txt     # Hagezi Pro (GPLv3)

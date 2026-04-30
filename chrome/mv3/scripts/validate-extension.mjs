@@ -15,7 +15,7 @@ validateJavaScript();
 validateRuntimeFilterAssets();
 if (hasRuntimeFilterAssets()) {
   validateJsonFiles();
-  validateCosmeticIndex();
+  validateRulesetCatalog();
 }
 
 if (errors.length > 0) {
@@ -55,7 +55,15 @@ function validateManifest() {
   }
 
   const permissions = new Set(manifest.permissions || []);
-  for (const permission of ["declarativeNetRequest", "storage", "tabs", "alarms", "scripting", "activeTab"]) {
+  for (const permission of [
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "storage",
+    "tabs",
+    "alarms",
+    "scripting",
+    "activeTab"
+  ]) {
     if (!permissions.has(permission)) {
       errors.push(`manifest.json missing permission: ${permission}`);
     }
@@ -114,8 +122,8 @@ function validateJavaScript() {
     "src/content/picker.js"
   ];
 
-  if (existsSync(join(root, "filters/generated/cosmetic-index.js"))) {
-    files.push("filters/generated/cosmetic-index.js");
+  if (existsSync(join(root, "filters/generated/ruleset.js"))) {
+    files.push("filters/generated/ruleset.js");
   }
 
   for (const file of files) {
@@ -128,28 +136,35 @@ function validateJavaScript() {
 }
 
 function validateJsonFiles() {
-  for (const file of [
-    "sources/ubo.json",
-    "sources/remote-manifest.schema.json",
-    "generated/cosmetic-index.json",
-    "generated/unsupported.json",
-    "generated/attribution.json"
-  ]) {
+  for (const file of ["ruleset.json"]) {
     readFilterJson(file);
   }
 }
 
-function validateCosmeticIndex() {
-  const index = readFilterJson("generated/cosmetic-index.json");
-  if (!Array.isArray(index.global) || !index.byHost || !Array.isArray(index.exceptions?.global) || !index.exceptions?.byHost) {
-    errors.push("browser filters generated/cosmetic-index.json has an invalid cosmetic index shape");
+function validateRulesetCatalog() {
+  const rulesets = readFilterJson("ruleset.json");
+  if (!Array.isArray(rulesets) || rulesets.length === 0) {
+    errors.push("browser filters ruleset.json must contain an array of rulesets");
+    return;
+  }
+
+  const ids = new Set();
+  for (const ruleset of rulesets) {
+    if (!ruleset?.id || !ruleset?.name || !Array.isArray(ruleset.urls) || ruleset.urls.length === 0) {
+      errors.push("browser filters ruleset.json contains a ruleset without id, name, or urls");
+      continue;
+    }
+    if (ids.has(ruleset.id)) {
+      errors.push(`browser filters ruleset.json contains duplicate ruleset id ${ruleset.id}`);
+    }
+    ids.add(ruleset.id);
   }
 }
 
 function validateRuntimeFilterAssets() {
   const missingFiles = [
-    "generated/cosmetic-index.json",
-    "generated/cosmetic-index.js"
+    "ruleset.json",
+    "generated/ruleset.js"
   ].filter((file) => !existsSync(join(browserFiltersRoot, file)));
 
   if (missingFiles.length === 0) return;
@@ -161,8 +176,8 @@ function validateRuntimeFilterAssets() {
 
 function hasRuntimeFilterAssets() {
   return (
-    existsSync(join(browserFiltersRoot, "generated/cosmetic-index.json")) &&
-    existsSync(join(browserFiltersRoot, "generated/cosmetic-index.js"))
+    existsSync(join(browserFiltersRoot, "ruleset.json")) &&
+    existsSync(join(browserFiltersRoot, "generated/ruleset.js"))
   );
 }
 

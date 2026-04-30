@@ -63,6 +63,9 @@ export function parseNetworkFilterLine(rawLine, defaultAction) {
     return null;
   }
 
+  line = normalizeHostsFilterLine(line);
+  if (!line) return null;
+
   if (line.includes("##") || line.includes("#@#") || line.includes("#?#") || line.includes("#$#")) {
     return null;
   }
@@ -125,7 +128,10 @@ export function parseNetworkFilterLine(rawLine, defaultAction) {
   }
 
   if (options.excludedResourceTypes.size > 0) {
-    condition.excludedResourceTypes = [...options.excludedResourceTypes];
+    condition.resourceTypes = condition.resourceTypes.filter((type) => !options.excludedResourceTypes.has(type));
+    if (condition.resourceTypes.length === 0) {
+      return { rawLine, unsupported: true, reason: "empty-resource-types" };
+    }
   }
 
   priority += options.priorityBoost;
@@ -195,6 +201,11 @@ function parseNetworkOptions(optionPart) {
 
     if (token.startsWith("domain=")) {
       const domains = parseDomainOption(token.slice("domain=".length));
+      if (domains.unsupported) {
+        options.unsupported = true;
+        options.reason = domains.reason;
+        return options;
+      }
       options.initiatorDomains.push(...domains.included);
       options.excludedInitiatorDomains.push(...domains.excluded);
       continue;
@@ -257,14 +268,67 @@ function mapResourceType(type) {
   return map[type] || null;
 }
 
+function normalizeHostsFilterLine(line) {
+  const withoutComment = line.replace(/\s+#.*$/, "").trim();
+  if (!withoutComment) return "";
+
+  const tokens = withoutComment.split(/\s+/);
+  let hostname = "";
+
+  if (tokens.length >= 2 && isHostsAddress(tokens[0])) {
+    hostname = tokens[1];
+  } else if (tokens.length === 1 && !isHostsAddress(tokens[0]) && isHostnameToken(tokens[0])) {
+    hostname = tokens[0];
+  } else {
+    return line;
+  }
+
+  const normalized = normalizeHostname(hostname);
+  if (!normalized || normalized === "localhost") return "";
+
+  return `||${normalized}^`;
+}
+
+function isHostsAddress(value) {
+  return (
+    value === "::" ||
+    value === "::1" ||
+    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value)
+  );
+}
+
+function isHostnameToken(value) {
+  return /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/i.test(value) && !value.includes("..");
+}
+
 function parseDomainOption(value) {
   const included = [];
   const excluded = [];
 
   for (const rawDomain of value.split("|")) {
-    const negated = rawDomain.startsWith("~");
-    const domain = normalizeHostname(negated ? rawDomain.slice(1) : rawDomain);
-    if (!domain) continue;
+    const trimmed = rawDomain.trim();
+    if (!trimmed) continue;
+
+    const domainValue = trimmed.startsWith("~") ? trimmed.slice(1) : trimmed;
+    if (domainValue.includes("*")) {
+      return {
+        included,
+        excluded,
+        unsupported: true,
+        reason: "unsupported-domain-option:wildcard"
+      };
+    }
+
+    const negated = trimmed.startsWith("~");
+    const domain = normalizeHostname(domainValue);
+    if (!domain || !isValidDnrDomain(domain)) {
+      return {
+        included,
+        excluded,
+        unsupported: true,
+        reason: "unsupported-domain-option:invalid-domain"
+      };
+    }
 
     if (negated) {
       excluded.push(domain);
@@ -273,7 +337,7 @@ function parseDomainOption(value) {
     }
   }
 
-  return { included, excluded };
+  return { included, excluded, unsupported: false, reason: null };
 }
 
 export function compileCosmeticRules(sources, version) {
@@ -371,8 +435,10 @@ function addCosmeticSelector(target, domains, selector) {
 function isUnsupportedCosmeticSelector(selector) {
   const lowered = selector.toLowerCase();
   return [
+    "+js(",
     ":has-text(",
     ":matches-css(",
+    ":upward(",
     ":xpath(",
     ":remove(",
     ":style(",
@@ -409,11 +475,18 @@ export function normalizeHostname(value) {
     const hostname = raw.includes("://") ? new URL(raw).hostname : raw;
     return hostname
       .replace(/^\*\./, "")
-      .replace(/^\.+|\.+$/g, "")
-      .replace(/[^a-z0-9.-]/g, "");
+      .replace(/[^a-z0-9.-]/g, "")
+      .replace(/^\.+|\.+$/g, "");
   } catch {
     return "";
   }
+}
+
+function isValidDnrDomain(value) {
+  if (!value || value.length > 253 || value.includes("..")) return false;
+  return value
+    .split(".")
+    .every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
 }
 
 export function sanitizeSelector(selector) {

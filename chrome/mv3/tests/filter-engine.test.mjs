@@ -24,7 +24,7 @@ function resolveBrowserFiltersRoot() {
   ].filter(Boolean);
 
   for (const candidate of candidates) {
-    if (existsSync(join(candidate, "generated/cosmetic-index.json"))) {
+    if (existsSync(join(candidate, "ruleset.json"))) {
       return candidate;
     }
   }
@@ -86,7 +86,38 @@ test("document allow filters compile to allowAllRequests", () => {
   });
 });
 
-test("badfilter disables a matching generated rule", () => {
+test("wildcard domain options are unsupported instead of emitted as invalid DNR domains", () => {
+  const parsed = parseNetworkFilterLine("||ads.example^$script,domain=japscan.*", "block");
+
+  assert.equal(parsed.unsupported, true);
+  assert.equal(parsed.reason, "unsupported-domain-option:wildcard");
+});
+
+test("domain options compile to DNR initiator domain conditions", () => {
+  const parsed = parseNetworkFilterLine(
+    "||ads.example^$script,domain=example.com|~shop.example.com",
+    "block"
+  );
+
+  assert.deepEqual(parsed.condition.initiatorDomains, ["example.com"]);
+  assert.deepEqual(parsed.condition.excludedInitiatorDomains, ["shop.example.com"]);
+});
+
+test("negated resource options narrow resourceTypes without invalid DNR exclusions", () => {
+  const parsed = parseNetworkFilterLine("||ads.example^$~stylesheet", "block");
+
+  assert.ok(!parsed.condition.resourceTypes.includes("stylesheet"));
+  assert.equal(parsed.condition.excludedResourceTypes, undefined);
+});
+
+test("conflicting resource options are unsupported when no resources remain", () => {
+  const parsed = parseNetworkFilterLine("||ads.example^$script,~script", "block");
+
+  assert.equal(parsed.unsupported, true);
+  assert.equal(parsed.reason, "empty-resource-types");
+});
+
+test("badfilter disables a matching compiled rule", () => {
   const result = compileNetworkRules(
     [
       {
@@ -104,6 +135,30 @@ test("badfilter disables a matching generated rule", () => {
   assert.equal(result.unsupported.length, 0);
   assert.equal(result.badfilters.length, 1);
   assert.equal(result.rules.length, 0);
+});
+
+test("hosts-file entries compile into DNR hostname rules", () => {
+  const result = compileNetworkRules(
+    [
+      {
+        text: [
+          "# comment",
+          "0.0.0.0 ads.example.com",
+          "127.0.0.1 tracker.example.net # inline comment",
+          "localhost"
+        ].join("\n"),
+        defaultAction: "block"
+      }
+    ],
+    4000,
+    100
+  );
+
+  assert.equal(result.unsupported.length, 0);
+  assert.deepEqual(
+    result.rules.map((rule) => rule.condition.urlFilter),
+    ["||ads.example.com^", "||tracker.example.net^"]
+  );
 });
 
 test("cosmetic compiler separates global, host, and exception selectors", () => {
@@ -148,15 +203,19 @@ test("procedural cosmetic filters are reported unsupported", () => {
   const result = compileCosmeticRules(
     [
       {
-        text: "example.com##div:has-text(Advertisement)",
+        text: [
+          "example.com##div:has-text(Advertisement)",
+          "example.com##+js(aopw, _sp_)",
+          "example.com##img[src$=\"/ad.png\"]:upward(.sponsor)"
+        ].join("\n"),
         defaultException: false
       }
     ],
     "test-3"
   );
 
-  assert.equal(result.unsupported.length, 1);
-  assert.equal(result.unsupported[0].reason, "unsupported-selector");
+  assert.equal(result.unsupported.length, 3);
+  assert.ok(result.unsupported.every((entry) => entry.reason === "unsupported-selector"));
 });
 
 test("EasyList CNN cosmetic filters compile into supported selectors and exceptions", () => {
@@ -188,12 +247,13 @@ test("EasyList CNN cosmetic filters compile into supported selectors and excepti
   assert.equal(result.unsupported.length, 0);
 });
 
-test("packaged cosmetic index contains CNN selectors for content-script fallback", async () => {
-  const raw = await readFile(join(browserFiltersRoot, "generated/cosmetic-index.json"), "utf8");
-  const index = JSON.parse(raw);
+test("ruleset catalog is packaged with default rulesets", async () => {
+  const raw = await readFile(join(browserFiltersRoot, "ruleset.json"), "utf8");
+  const rulesets = JSON.parse(raw);
+  const defaultIds = rulesets.filter((ruleset) => ruleset.enabled).map((ruleset) => ruleset.id);
 
-  assert.ok(index.version);
-  assert.ok(index.byHost["cnn.com"].includes(".ad-slot-dynamic"));
-  assert.ok(index.byHost["cnn.com"].includes(".zone__ads"));
-  assert.ok(index.exceptions.byHost["cnn.com"].includes("#outbrain_widget_0"));
+  assert.ok(rulesets.length > 0);
+  assert.ok(defaultIds.includes("ublock-filters"));
+  assert.ok(defaultIds.includes("easylist"));
+  assert.ok(defaultIds.includes("easyprivacy"));
 });
