@@ -44,7 +44,6 @@ type ExistingGitHubIssue = {
   number: number;
   title: string;
   url: string;
-  state: string;
 };
 
 const DEFAULT_REPO = "open-adblock/open-adblock";
@@ -153,19 +152,13 @@ export async function createGitHubIssue(
   if (existingIssue) {
     await addGitHubIssueComment(repo, tokenHeaders, existingIssue.number, reportWithScreenshot, fetcher);
     await addGitHubIssueLabels(repo, tokenHeaders, existingIssue.number, buildIssueLabels(report, env.GITHUB_LABELS), fetcher);
-    let reopened = false;
-
-    if (existingIssue.state === "closed") {
-      await reopenGitHubIssue(repo, tokenHeaders, existingIssue.number, fetcher);
-      reopened = true;
-    }
 
     return {
       number: existingIssue.number,
       url: existingIssue.url,
       created: false,
       commented: true,
-      reopened,
+      reopened: false,
       screenshotUrl
     };
   }
@@ -220,7 +213,7 @@ export function getAllowedCorsOrigin(origin: string, allowedOrigins = ""): strin
 }
 
 export function buildIssueTitle(report: NormalizedReport): string {
-  return truncate(`issue: ${getReportDomain(report)}`, 120);
+  return truncate(`filter: \`${getReportDomain(report)}\``, 120);
 }
 
 export function buildIssueBody(report: NormalizedReport): string {
@@ -269,7 +262,7 @@ async function findExistingIssue(
   const title = buildIssueTitle(report);
   const domain = getReportDomain(report);
   const params = new URLSearchParams({
-    q: `repo:${repo} is:issue in:title ${domain}`,
+    q: `repo:${repo} is:issue is:open in:title ${domain}`,
     per_page: "20"
   });
   const response = await fetcher(`https://api.github.com/search/issues?${params}`, {
@@ -288,20 +281,18 @@ async function findExistingIssue(
   const result = (await response.json()) as {
     items?: Array<{ number?: unknown; title?: unknown; html_url?: unknown; state?: unknown }>;
   };
-  const issue = (result.items || []).find((item) => asString(item.title) === title);
+  const issue = (result.items || []).find((item) => asString(item.title) === title && asString(item.state) !== "closed");
   if (!issue) return null;
 
   const number = Number(issue.number);
   const url = asString(issue.html_url);
-  const state = asString(issue.state);
 
   if (!Number.isInteger(number) || !url) return null;
 
   return {
     number,
     title,
-    url,
-    state
+    url
   };
 }
 
@@ -351,30 +342,6 @@ async function addGitHubIssueLabels(
       502,
       "github_issue_label_failed",
       `GitHub issue label update failed with ${response.status}: ${body.slice(0, 300)}`
-    );
-  }
-}
-
-async function reopenGitHubIssue(
-  repo: string,
-  headers: HeadersInit,
-  issueNumber: number,
-  fetcher: Fetcher
-): Promise<void> {
-  const response = await fetcher(`https://api.github.com/repos/${repo}/issues/${issueNumber}`, {
-    method: "PATCH",
-    headers,
-    body: JSON.stringify({
-      state: "open"
-    })
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new ReportError(
-      502,
-      "github_issue_reopen_failed",
-      `GitHub issue reopen failed with ${response.status}: ${body.slice(0, 300)}`
     );
   }
 }

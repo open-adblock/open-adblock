@@ -103,7 +103,7 @@ describe("createGitHubIssue", () => {
     expect(calls[0].url).toContain("https://api.github.com/search/issues?");
     expect(calls[1].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues");
     expect(await calls[1].json()).toMatchObject({
-      title: "issue: shop.example",
+      title: "filter: `shop.example`",
       labels: ["issue:false-positive", "extension-report", "needs-triage"]
     });
   });
@@ -269,7 +269,7 @@ describe("createGitHubIssue", () => {
           items: [
             {
               number: 17,
-              title: "issue: video.example",
+              title: "filter: `video.example`",
               html_url: "https://github.com/open-adblock/open-adblock/issues/17",
               state: "open"
             }
@@ -293,7 +293,7 @@ describe("createGitHubIssue", () => {
     });
   });
 
-  it("reopens a closed domain issue after commenting", async () => {
+  it("creates a new issue when the matching domain issue is closed", async () => {
     const report = normalizeReportPayload({
       category: "breakage",
       details: "The page is blank",
@@ -307,24 +307,26 @@ describe("createGitHubIssue", () => {
           items: [
             {
               number: 28,
-              title: "issue: news.example",
+              title: "filter: `news.example`",
               html_url: "https://github.com/open-adblock/open-adblock/issues/28",
               state: "closed"
             }
           ]
         });
       }
-      return Response.json({});
+      return Response.json({ number: 29, html_url: "https://github.com/open-adblock/open-adblock/issues/29" });
     };
 
     const issue = await createGitHubIssue({ GH_TOKEN: "token" }, report, fetcher as typeof fetch);
 
-    expect(issue).toMatchObject({ number: 28, created: false, commented: true, reopened: true });
-    expect(calls).toHaveLength(4);
-    expect(calls[1].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/28/comments");
-    expect(calls[2].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/28/labels");
-    expect(calls[3].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues/28");
-    expect(await calls[3].json()).toEqual({ state: "open" });
+    expect(issue).toMatchObject({ number: 29, created: true, commented: false, reopened: false });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].url).toContain("is%3Aopen");
+    expect(calls[1].url).toBe("https://api.github.com/repos/open-adblock/open-adblock/issues");
+    expect(await calls[1].json()).toMatchObject({
+      title: "filter: `news.example`",
+      labels: ["issue:breakage", "extension-report", "needs-triage"]
+    });
   });
 });
 
@@ -337,7 +339,7 @@ describe("GitHub issue formatting", () => {
       diagnostics: { pageBlocked: 9 }
     });
 
-    expect(buildIssueTitle(report)).toBe("issue: video.example");
+    expect(buildIssueTitle(report)).toBe("filter: `video.example`");
     expect(buildIssueBody(report)).toContain("Video controls disappear");
     expect(buildIssueBody(report)).toContain('"pageBlocked": 9');
     expect(buildIssueCommentBody(report)).toContain("## Additional report");
@@ -349,7 +351,7 @@ describe("GitHub issue formatting", () => {
       page: { url: "https://www.example.com/", hostname: "www.example.com" }
     });
 
-    expect(buildIssueTitle(report)).toBe("issue: example.com");
+    expect(buildIssueTitle(report)).toBe("filter: `example.com`");
   });
 
   it("adds the reported issue type as a GitHub label", () => {

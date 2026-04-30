@@ -5,10 +5,10 @@ Cloudflare Worker endpoint for extension reports. Reports are validated and forw
 Issues are grouped by hostname with titles like:
 
 ```text
-issue: domain.com
+filter: `domain.com`
 ```
 
-When an issue with the same title already exists, the report is appended as a new comment. If that issue is closed, the Worker reopens it after adding the comment. Reports also get an issue type label: `issue:breakage`, `issue:missed-ad`, `issue:false-positive`, or `issue:other`.
+When an open issue with the same title already exists, the report is appended as a new comment. Closed issues are left closed, and a new report opens a fresh issue instead. Reports also get an issue type label: `issue:breakage`, `issue:missed-ad`, `issue:false-positive`, or `issue:other`.
 
 If a report includes a screenshot, the Worker uploads it to the configured GitHub repository through the Contents API and embeds the raw GitHub URL in the issue or comment.
 
